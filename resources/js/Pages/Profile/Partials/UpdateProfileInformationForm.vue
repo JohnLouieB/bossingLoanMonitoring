@@ -18,7 +18,6 @@ const user = usePage().props.auth.user;
 
 const form = useForm({
     name: user.name,
-    email: user.email,
 });
 </script>
 
@@ -30,7 +29,7 @@ const form = useForm({
             </h2>
 
             <p class="mt-1 text-sm text-gray-600">
-                Update your account's profile information and email address.
+                Update your account's username.
             </p>
         </header>
 
@@ -39,7 +38,7 @@ const form = useForm({
             class="mt-6 space-y-6"
         >
             <div>
-                <InputLabel for="name" value="Name" />
+                <InputLabel for="name" value="Username" />
 
                 <TextInput
                     id="name"
@@ -56,17 +55,8 @@ const form = useForm({
 
             <div>
                 <InputLabel for="email" value="Email" />
-
-                <TextInput
-                    id="email"
-                    type="email"
-                    class="mt-1 block w-full"
-                    v-model="form.email"
-                    required
-                    autocomplete="username"
-                />
-
-                <InputError class="mt-2" :message="form.errors.email" />
+                <p class="mt-1 text-sm text-gray-600">{{ user.email }}</p>
+                <p class="mt-1 text-xs text-gray-500">Email cannot be changed</p>
             </div>
 
             <div v-if="mustVerifyEmail && user.email_verified_at === null">
