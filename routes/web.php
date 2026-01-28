@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\LoanController;
 use App\Http\Controllers\MemberController;
 use App\Http\Controllers\MonthlyContributionController;
@@ -9,10 +10,6 @@ use Illuminate\Support\Facades\Route;
 Route::get('/', function () {
     return redirect()->route('login');
 });
-
-Route::get('/dashboard', function () {
-    return Inertia::render('Dashboard');
-})->middleware(['auth', 'verified'])->name('dashboard');
 
 Route::middleware('auth')->group(function () {
     // Profile routes - viewers can view but only admins can update
@@ -49,6 +46,10 @@ Route::middleware('auth')->group(function () {
         Route::patch('/monthly-contributions/update-all-amounts', [MonthlyContributionController::class, 'updateAllAmounts'])->name('monthly-contributions.update-all-amounts');
         Route::patch('/monthly-contributions/{member}/status', [MonthlyContributionController::class, 'updateStatus'])->name('monthly-contributions.update-status');
     });
+
+    Route::get('/dashboard', [DashboardController::class, 'index'])
+        ->middleware(['auth', 'verified'])
+        ->name('dashboard');
 });
 
-require __DIR__.'/auth.php';
+require __DIR__ . '/auth.php';
