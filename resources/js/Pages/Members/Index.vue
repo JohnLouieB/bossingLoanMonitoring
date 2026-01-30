@@ -225,25 +225,9 @@ const columns = [
                         <!-- Members Table -->
                         <a-table
                             :columns="columns"
-                            :data-source="members.data"
-                            :pagination="{
-                                current: members.current_page,
-                                pageSize: members.per_page,
-                                total: members.total,
-                                showSizeChanger: true,
-                                showTotal: (total) => `Total ${total} members`,
-                            }"
+                            :data-source="members"
+                            :pagination="false"
                             :loading="false"
-                            @change="(pagination) => {
-                                router.get(route('members.index'), {
-                                    page: pagination.current,
-                                    per_page: pagination.pageSize,
-                                    search: searchInput,
-                                }, {
-                                    preserveState: true,
-                                    preserveScroll: true,
-                                });
-                            }"
                         />
                     </div>
                 </div>

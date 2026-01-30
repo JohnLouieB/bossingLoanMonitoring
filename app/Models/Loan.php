@@ -17,6 +17,7 @@ class Loan extends Model
         'status',
         'description',
         'notes',
+        'year',
     ];
 
     /**

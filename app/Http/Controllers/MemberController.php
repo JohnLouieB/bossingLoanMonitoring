@@ -26,7 +26,7 @@ class MemberController extends Controller
             });
         }
 
-        $members = $query->orderBy('created_at', 'desc')->paginate(10);
+        $members = $query->orderBy('created_at', 'desc')->get();
 
         return Inertia::render('Members/Index', [
             'members' => $members,

@@ -31,10 +31,10 @@ class MonthlyContributionController extends Controller
 
         $members = $query->with(['monthlyContributions' => function ($q) use ($currentYear) {
             $q->where('year', $currentYear)->orderBy('month');
-        }])->orderBy('created_at', 'desc')->paginate(10);
+        }])->orderBy('created_at', 'desc')->get();
 
         // Transform data to include contribution status for each month
-        $members->getCollection()->transform(function ($member) use ($currentYear) {
+        $members->transform(function ($member) use ($currentYear) {
             $contributions = $member->monthlyContributions->keyBy('month');
             
             // Initialize all months with pending status if no contribution exists

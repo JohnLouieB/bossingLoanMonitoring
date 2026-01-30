@@ -6,7 +6,7 @@ import DropdownLink from '@/Components/DropdownLink.vue';
 import NavLink from '@/Components/NavLink.vue';
 import ResponsiveNavLink from '@/Components/ResponsiveNavLink.vue';
 import { Link, router, usePage } from '@inertiajs/vue3';
-import { UserOutlined, DollarCircleOutlined, AuditOutlined, DashboardOutlined, HomeOutlined } from '@ant-design/icons-vue';
+import { UserOutlined, DollarCircleOutlined, AuditOutlined, DashboardOutlined, HomeOutlined, AccountBookOutlined } from '@ant-design/icons-vue';
 
 const showingNavigationDropdown = ref(false);
 const openKeys = ref([]);
@@ -25,6 +25,8 @@ const selectedKeys2 = computed(() => {
         return ['2'];
     } else if (routeName.startsWith('/loans')) {
         return ['3'];
+    } else if (routeName.startsWith('/capital-cash-flow')) {
+        return ['4'];
     }
     return ['0'];
 });
@@ -59,6 +61,10 @@ const breadcrumbItems = computed(() => {
         items.push({
             title: 'Monthly Contributions',
         });
+    } else if (routeName.startsWith('/capital-cash-flow')) {
+        items.push({
+            title: 'Capital and Cash Flow',
+        });
     }
 
     return items;
@@ -77,6 +83,9 @@ const handleMenuClick = ({ key }) => {
             break;
         case '3':
             router.visit(route('loans.index'));
+            break;
+        case '4':
+            router.visit(route('capital-cash-flow.index'));
             break;
     }
 };
@@ -257,7 +266,7 @@ const handleMenuClick = ({ key }) => {
         </a-breadcrumb-item>
       </a-breadcrumb>
       <a-layout style="padding: 24px 0; background: #fff">
-        <a-layout-sider width="200" style="background: #fff">
+        <a-layout-sider width="250" style="background: #fff">
           <a-menu
             :selectedKeys="selectedKeys2"
             v-model:openKeys="openKeys"
@@ -302,6 +311,16 @@ const handleMenuClick = ({ key }) => {
                     </div>
                     <div>
                   Loans
+                  </div>
+                </span>
+            </a-menu-item>
+            <a-menu-item key="4">
+                <span class="flex items-center gap-2">
+                    <div class="mb-1">
+                    <AccountBookOutlined />
+                    </div>
+                    <div>
+                  Capital and Cash Flow
                   </div>
                 </span>
             </a-menu-item>

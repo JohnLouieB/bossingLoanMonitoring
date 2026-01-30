@@ -2,9 +2,12 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, router, useForm, usePage } from '@inertiajs/vue3';
 import { ref, watch, h, computed } from 'vue';
-import { Tag, Button, Select, Descriptions, message } from 'ant-design-vue';
+import { Tag, Button, Select, Descriptions, message, List, Card, Collapse } from 'ant-design-vue';
 
 const DescriptionsItem = Descriptions.Item;
+const ListItem = List.Item;
+const ListItemMeta = List.Item.Meta;
+const CollapsePanel = Collapse.Panel;
 import { 
     SearchOutlined,
     EyeOutlined,
@@ -39,13 +42,18 @@ const props = defineProps({
 });
 
 const searchInput = ref(props.filters.search || '');
+const balanceFilter = ref(props.filters.balance_filter || 'all');
 const isLoanDetailModalVisible = ref(false);
 const isCreateLoanModalVisible = ref(false);
 const isMonthlyInterestModalVisible = ref(false);
+const isDeleteLoanModalVisible = ref(false);
 const selectedLoan = ref(null);
 const selectedMemberForLoans = ref(null);
 const monthlyInterestData = ref(props.monthlyInterestPayments || []);
 const remainingBalance = ref(props.remainingBalance || 0);
+const advancePayments = ref([]);
+const deleteConfirmationText = ref('');
+const deleteConfirmationRequired = 'DELETE';
 
 
 
@@ -72,6 +80,7 @@ const advancePaymentForm = useForm({
 });
 const loanStatusForm = useForm({
     status: '',
+    year: null,
 });
 const monthlyInterestForm = useForm({
     month: null,
@@ -89,6 +98,7 @@ const loanForm = useForm({
     status: 'pending',
     description: '',
     notes: '',
+    year: new Date().getFullYear(),
 });
 
 // Member options for select
@@ -99,6 +109,16 @@ const memberOptions = computed(() => {
     }));
 });
 
+// Generate year options (current year ± 5 years)
+const currentYear = new Date().getFullYear();
+const yearOptions = Array.from({ length: 11 }, (_, i) => {
+    const year = currentYear - 5 + i;
+    return {
+        value: year,
+        label: year.toString(),
+    };
+});
+
 // Show member select only when borrower type is 'member'
 const showMemberSelect = computed(() => {
     return loanForm.borrower_type === 'member';
@@ -106,10 +126,19 @@ const showMemberSelect = computed(() => {
 
 // Search functionality
 const handleSearch = () => {
-    router.get(route('loans.index'), { search: searchInput.value }, {
+    router.get(route('loans.index'), { 
+        search: searchInput.value,
+        balance_filter: balanceFilter.value,
+    }, {
         preserveState: true,
         preserveScroll: true,
     });
+};
+
+// Handle balance filter change
+const handleBalanceFilterChange = (value) => {
+    balanceFilter.value = value;
+    handleSearch();
 };
 
 // Watch for search input changes and debounce
@@ -128,7 +157,19 @@ const handleLoanSelect = (member, loanId) => {
         selectedLoan.value = loan;
         selectedMemberForLoans.value = member;
         loanStatusForm.status = loan.status;
+        loanStatusForm.year = loan.year || null; // Set to null if no year, don't auto-set to current year
         loanStatusForm.clearErrors();
+        
+            // Load advance payments from the selected loan (sorted by created_at, newest first)
+            const loanAdvancePayments = loan.advance_payments || loan.advancePayments || [];
+            const paymentsArray = Array.isArray(loanAdvancePayments) ? loanAdvancePayments : Object.values(loanAdvancePayments);
+            advancePayments.value = paymentsArray.sort((a, b) => {
+                // Sort by created_at (when record was created) to show latest record first
+                const dateA = new Date(a.created_at || a.payment_date);
+                const dateB = new Date(b.created_at || b.payment_date);
+                return dateB - dateA; // Newest first
+            });
+        
         // Load monthly interest data when opening loan details (this also loads remaining balance)
         loadMonthlyInterestData();
         isLoanDetailModalVisible.value = true;
@@ -154,10 +195,49 @@ const loadMonthlyInterestData = () => {
             if (page.props.remainingBalance !== undefined) {
                 remainingBalance.value = page.props.remainingBalance;
             }
+            
+            // Reload advance payments by fetching fresh loan data
+            reloadAdvancePayments();
         },
         onError: () => {
             message.error('Failed to load monthly interest data');
         },
+    });
+};
+
+// Reload advance payments from selected loan
+const reloadAdvancePayments = () => {
+    if (!selectedLoan.value || !selectedMemberForLoans.value) return;
+    
+    // Reload members to get fresh loan data
+    router.reload({ 
+        only: ['members'],
+        preserveState: true,
+        preserveScroll: true,
+        onSuccess: () => {
+            // Find the updated member and loan in the fresh data
+            const updatedMember = props.members?.data?.find(m => 
+                m.id === selectedMemberForLoans.value.id
+            );
+            
+            if (updatedMember) {
+                const updatedLoan = updatedMember.loans?.find(l => l.id === selectedLoan.value.id);
+                if (updatedLoan) {
+                    selectedLoan.value = updatedLoan;
+                    selectedMemberForLoans.value = updatedMember;
+                    
+                    // Update advance payments list (sorted by created_at, newest first)
+                    const loanAdvancePayments = updatedLoan.advance_payments || updatedLoan.advancePayments || [];
+                    const paymentsArray = Array.isArray(loanAdvancePayments) ? loanAdvancePayments : Object.values(loanAdvancePayments);
+                    advancePayments.value = paymentsArray.sort((a, b) => {
+                        // Sort by created_at (when record was created) to show latest record first
+                        const dateA = new Date(a.created_at || a.payment_date);
+                        const dateB = new Date(b.created_at || b.payment_date);
+                        return dateB - dateA; // Newest first
+                    });
+                }
+            }
+        }
     });
 };
 
@@ -216,11 +296,50 @@ const handleAdvancePayment = () => {
                 remainingBalance.value = page.props.remainingBalance;
             }
             
-            // Reload monthly interest data using the show route (GET)
+            // Reload monthly interest data and advance payments (this will sort the list)
             loadMonthlyInterestData();
+            
+            // Also reload advance payments to ensure we have the latest data with proper sorting
+            reloadAdvancePayments();
         },
         onError: () => {
             message.error('Please fix the errors in the form');
+        },
+    });
+};
+
+// Handle revert advance payment
+const handleRevertAdvancePayment = (advancePaymentId) => {
+    if (!selectedLoan.value) return;
+    
+    router.delete(route('loans.revert-advance-payment', [selectedLoan.value.id, advancePaymentId]), {
+        preserveState: true,
+        preserveScroll: true,
+        onSuccess: (page) => {
+            message.success('Advance payment reverted successfully');
+            
+            // Update local state from Inertia response if available
+            if (page?.props?.monthlyInterestPayments) {
+                const data = Array.isArray(page.props.monthlyInterestPayments) 
+                    ? page.props.monthlyInterestPayments 
+                    : Object.values(page.props.monthlyInterestPayments);
+                monthlyInterestData.value = data;
+            }
+            if (page?.props?.remainingBalance !== undefined) {
+                remainingBalance.value = page.props.remainingBalance;
+            }
+            
+            // Remove the reverted payment from the list immediately for instant feedback
+            advancePayments.value = advancePayments.value.filter(ap => ap.id !== advancePaymentId);
+            
+            // Reload monthly interest data and advance payments
+            loadMonthlyInterestData();
+            
+            // Also reload advance payments to ensure we have the latest data
+            reloadAdvancePayments();
+        },
+        onError: () => {
+            message.error('Failed to revert advance payment');
         },
     });
 };
@@ -316,6 +435,41 @@ const monthlyInterestColumns = [
     },
 ];
 
+// Handle year change - immediately deducts capital
+const handleYearChange = () => {
+    if (!selectedLoan.value) return;
+    
+    // Only update if year actually changed
+    if (selectedLoan.value.year === loanStatusForm.year) {
+        return;
+    }
+    
+    loanStatusForm.patch(route('loans.update', selectedLoan.value.id), {
+        preserveScroll: true,
+        onSuccess: () => {
+            message.success('Loan year updated and capital adjusted successfully');
+            // Update the selected loan year in the local data
+            if (selectedLoan.value) {
+                selectedLoan.value.year = loanStatusForm.year;
+            }
+            // Also update in the member's loans array
+            if (selectedMemberForLoans.value && selectedMemberForLoans.value.loans) {
+                const loanIndex = selectedMemberForLoans.value.loans.findIndex(
+                    l => l.id === selectedLoan.value.id
+                );
+                if (loanIndex !== -1) {
+                    selectedMemberForLoans.value.loans[loanIndex].year = loanStatusForm.year;
+                }
+            }
+        },
+        onError: () => {
+            message.error('Failed to update loan year');
+            // Revert the year selection on error
+            loanStatusForm.year = selectedLoan.value.year;
+        },
+    });
+};
+
 // Handle status update
 const handleStatusUpdate = () => {
     if (!selectedLoan.value) return;
@@ -350,7 +504,38 @@ const showCreateLoanModal = () => {
     loanForm.clearErrors();
     loanForm.borrower_type = 'member';
     loanForm.status = 'pending';
+    loanForm.year = new Date().getFullYear();
     isCreateLoanModalVisible.value = true;
+};
+
+// Delete Loan
+const showDeleteLoanModal = () => {
+    deleteConfirmationText.value = '';
+    isDeleteLoanModalVisible.value = true;
+};
+
+const handleDeleteLoan = () => {
+    if (!selectedLoan.value) return;
+    
+    if (deleteConfirmationText.value !== deleteConfirmationRequired) {
+        message.error('Please type "DELETE" to confirm deletion');
+        return;
+    }
+    
+    router.delete(route('loans.destroy', selectedLoan.value.id), {
+        preserveScroll: true,
+        onSuccess: () => {
+            isDeleteLoanModalVisible.value = false;
+            isLoanDetailModalVisible.value = false;
+            selectedLoan.value = null;
+            selectedMemberForLoans.value = null;
+            deleteConfirmationText.value = '';
+            message.success('Loan deleted successfully and capital restored');
+        },
+        onError: () => {
+            message.error('Failed to delete loan');
+        },
+    });
 };
 
 const handleCreateLoan = () => {
@@ -473,18 +658,30 @@ const columns = [
             <div class="mx-auto max-w-7xl sm:px-6 lg:px-8">
                 <div class="overflow-hidden bg-white shadow-sm sm:rounded-lg">
                     <div class="p-6">
-                        <!-- Search and Create Button -->
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 16px; gap: 16px;">
-                            <a-input
-                                v-model:value="searchInput"
-                                placeholder="Search by member name or email..."
-                                style="max-width: 400px;"
-                                allow-clear
-                            >
-                                <template #prefix>
-                                    <SearchOutlined />
-                                </template>
-                            </a-input>
+                        <!-- Search, Filter and Create Button -->
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 16px; gap: 16px; align-items: center;">
+                            <div style="display: flex; gap: 12px; align-items: center; flex: 1;">
+                                <a-input
+                                    v-model:value="searchInput"
+                                    placeholder="Search by member name or email..."
+                                    style="max-width: 400px;"
+                                    allow-clear
+                                    @pressEnter="handleSearch"
+                                >
+                                    <template #prefix>
+                                        <SearchOutlined />
+                                    </template>
+                                </a-input>
+                                <a-select
+                                    v-model:value="balanceFilter"
+                                    style="width: 200px;"
+                                    @change="handleBalanceFilterChange"
+                                >
+                                    <a-select-option value="all">All Loans</a-select-option>
+                                    <a-select-option value="has_balance">Has Balance</a-select-option>
+                                    <a-select-option value="paid">Paid (Zero Balance)</a-select-option>
+                                </a-select>
+                            </div>
                             <a-button v-if="isAdmin" type="primary" @click="showCreateLoanModal">
                                 Create Loan
                             </a-button>
@@ -521,6 +718,7 @@ const columns = [
                                     page: pagination.current,
                                     per_page: pagination.pageSize,
                                     search: searchInput,
+                                    balance_filter: balanceFilter,
                                 }, {
                                     preserveState: true,
                                     preserveScroll: true,
@@ -616,6 +814,19 @@ const columns = [
                 </a-form-item>
 
                 <a-form-item
+                    label="Loan Year"
+                    :validate-status="loanForm.errors.year ? 'error' : ''"
+                    :help="loanForm.errors.year"
+                >
+                    <a-select
+                        v-model:value="loanForm.year"
+                        placeholder="Select year"
+                        :options="yearOptions"
+                        style="width: 100%;"
+                    />
+                </a-form-item>
+
+                <a-form-item
                     label="Status"
                     :validate-status="loanForm.errors.status ? 'error' : ''"
                     :help="loanForm.errors.status"
@@ -657,7 +868,7 @@ const columns = [
         <a-modal
             v-model:open="isLoanDetailModalVisible"
             width="600px"
-            @cancel="() => { isLoanDetailModalVisible = false; selectedLoan = null; selectedMemberForLoans = null; loanStatusForm.reset(); loanStatusForm.clearErrors(); }"
+            @cancel="() => { isLoanDetailModalVisible = false; selectedLoan = null; selectedMemberForLoans = null; loanStatusForm.reset(); loanStatusForm.clearErrors(); loanStatusForm.year = null; }"
         >
             <template #title>
                 <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -668,9 +879,19 @@ const columns = [
                 </div>
             </template>
             <template #footer>
-                <a-button @click="() => { isLoanDetailModalVisible = false; selectedLoan = null; selectedMemberForLoans = null; loanStatusForm.reset(); loanStatusForm.clearErrors(); }">
-                    Close
-                </a-button>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <a-button 
+                        v-if="isAdmin && selectedLoan"
+                        type="primary" 
+                        danger 
+                        @click="showDeleteLoanModal"
+                    >
+                        Delete Loan
+                    </a-button>
+                    <a-button @click="() => { isLoanDetailModalVisible = false; selectedLoan = null; selectedMemberForLoans = null; loanStatusForm.reset(); loanStatusForm.clearErrors(); }">
+                        Close
+                    </a-button>
+                </div>
             </template>
             <div v-if="selectedLoan && selectedMemberForLoans" style="padding: 16px 0;">
                 <a-descriptions :column="1" bordered>
@@ -698,6 +919,26 @@ const columns = [
                         <span style="font-weight: bold; font-size: 16px; color: #52c41a;">
                             {{ formatCurrency(interestCollected) }}
                         </span>
+                    </a-descriptions-item>
+                    <a-descriptions-item label="Loan Year">
+                        <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                            <a-select
+                                v-if="isAdmin"
+                                v-model:value="loanStatusForm.year"
+                                :options="yearOptions"
+                                style="width: 150px;"
+                                @change="handleYearChange"
+                                :loading="loanStatusForm.processing"
+                                placeholder="Select year"
+                            />
+                            <span v-else>{{ selectedLoan.year || 'Not set' }}</span>
+                            <span v-if="loanStatusForm.errors.year" style="color: red; font-size: 12px;">
+                                {{ loanStatusForm.errors.year }}
+                            </span>
+                        </div>
+                        <p v-if="isAdmin && selectedLoan.year !== loanStatusForm.year" style="color: #1890ff; font-size: 12px; margin-top: 4px;">
+                            Capital will be adjusted when you select a year
+                        </p>
                     </a-descriptions-item>
                     <a-descriptions-item label="Status">
                         <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
@@ -783,6 +1024,54 @@ const columns = [
                     <p v-else style="color: #999; font-style: italic;">View-only mode: Cannot record payments</p>
                 </div>
 
+                <!-- Advance Payments List -->
+                <div style="margin-bottom: 24px;">
+                    <a-collapse :bordered="false">
+                        <a-collapse-panel key="1" :header="`Recorded Advance Payments (${advancePayments.length})`">
+                            <div v-if="advancePayments.length === 0" style="text-align: center; padding: 20px; color: #999; background: #f5f5f5; border-radius: 4px;">
+                                No advance payments recorded yet.
+                            </div>
+                            <a-list
+                                v-else
+                                :data-source="advancePayments"
+                                :pagination="false"
+                                item-layout="horizontal"
+                                :bordered="true"
+                            >
+                                <template #renderItem="{ item }">
+                                    <a-list-item>
+                                        <a-list-item-meta>
+                                            <template #title>
+                                                <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                                                    <div>
+                                                        <span style="font-weight: 600;">{{ formatCurrency(item.amount) }}</span>
+                                                        <span style="color: #999; margin-left: 12px; font-size: 12px;">
+                                                            {{ new Date(item.payment_date).toLocaleDateString() }}
+                                                        </span>
+                                                        <span v-if="item.notes" style="color: #666; margin-left: 12px; font-size: 12px;">
+                                                            - {{ item.notes }}
+                                                        </span>
+                                                    </div>
+                                                    <a-button
+                                                        v-if="isAdmin"
+                                                        type="primary"
+                                                        danger
+                                                        size="small"
+                                                        @click="handleRevertAdvancePayment(item.id)"
+                                                        style="margin-left: 12px;"
+                                                    >
+                                                        Undo Payment
+                                                    </a-button>
+                                                </div>
+                                            </template>
+                                        </a-list-item-meta>
+                                    </a-list-item>
+                                </template>
+                            </a-list>
+                        </a-collapse-panel>
+                    </a-collapse>
+                </div>
+
                 <!-- Monthly Interest Table -->
                 <div v-if="monthlyInterestData.length === 0" style="text-align: center; padding: 20px; color: #999;">
                     No monthly interest data available. Please wait while data loads...
@@ -794,6 +1083,52 @@ const columns = [
                     :pagination="false"
                     :loading="false"
                 />
+            </div>
+        </a-modal>
+
+        <!-- Delete Loan Confirmation Modal -->
+        <a-modal
+            v-model:open="isDeleteLoanModalVisible"
+            title="Delete Loan"
+            ok-text="Delete"
+            ok-type="danger"
+            cancel-text="Cancel"
+            :ok-button-props="{ disabled: deleteConfirmationText !== deleteConfirmationRequired }"
+            @ok="handleDeleteLoan"
+            @cancel="() => { isDeleteLoanModalVisible = false; deleteConfirmationText = ''; }"
+        >
+            <div v-if="selectedLoan && selectedMemberForLoans">
+                <p style="margin-bottom: 16px; color: #ff4d4f; font-weight: 500;">
+                    Warning: This action cannot be undone!
+                </p>
+                <p style="margin-bottom: 16px;">
+                    You are about to delete the loan for:
+                </p>
+                <div style="background: #f5f5f5; padding: 12px; border-radius: 4px; margin-bottom: 16px;">
+                    <p style="margin: 4px 0;"><strong>Borrower:</strong> {{ selectedMemberForLoans.first_name }} {{ selectedMemberForLoans.last_name }}</p>
+                    <p style="margin: 4px 0;"><strong>Loan Amount:</strong> {{ formatCurrency(selectedLoan.amount) }}</p>
+                    <p style="margin: 4px 0;" v-if="selectedLoan.year"><strong>Loan Year:</strong> {{ selectedLoan.year }}</p>
+                    <p style="margin: 4px 0;"><strong>Balance:</strong> {{ formatCurrency(selectedLoan.balance !== undefined ? selectedLoan.balance : selectedLoan.amount) }}</p>
+                </div>
+                <p style="margin-bottom: 12px; color: #666;">
+                    This will:
+                </p>
+                <ul style="margin-bottom: 16px; padding-left: 20px; color: #666;">
+                    <li>Delete the loan and all associated records</li>
+                    <li v-if="selectedLoan.year">Restore {{ formatCurrency(selectedLoan.amount) }} to the capital for year {{ selectedLoan.year }}</li>
+                    <li>Delete all advance payments and monthly interest records</li>
+                </ul>
+                <a-form-item
+                    label="Type 'DELETE' to confirm:"
+                    :validate-status="deleteConfirmationText !== deleteConfirmationRequired && deleteConfirmationText.length > 0 ? 'error' : ''"
+                    :help="deleteConfirmationText !== deleteConfirmationRequired && deleteConfirmationText.length > 0 ? 'Confirmation text does not match' : ''"
+                >
+                    <a-input
+                        v-model:value="deleteConfirmationText"
+                        placeholder="Type DELETE to confirm"
+                        style="width: 100%;"
+                    />
+                </a-form-item>
             </div>
         </a-modal>
     </AuthenticatedLayout>

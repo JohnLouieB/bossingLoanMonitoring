@@ -39,8 +39,8 @@ const yearOptions = Array.from({ length: 11 }, (_, i) => {
 
 // Get the current amount from the first member (assuming all members have the same amount)
 const currentAmount = computed(() => {
-    if (props.members?.data && props.members.data.length > 0) {
-        return props.members.data[0].contribution_amount || 0;
+    if (props.members && props.members.length > 0) {
+        return props.members[0].contribution_amount || 0;
     }
     return 0;
 });
@@ -275,26 +275,9 @@ const columns = computed(() => {
                         <!-- Members Table -->
                         <a-table
                             :columns="columns"
-                            :data-source="members.data"
-                            :pagination="{
-                                current: members.current_page,
-                                pageSize: members.per_page,
-                                total: members.total,
-                                showSizeChanger: true,
-                                showTotal: (total) => `Total ${total} members`,
-                            }"
+                            :data-source="members"
+                            :pagination="false"
                             :scroll="{ x: 1200 }"
-                            @change="(pagination) => {
-                                router.get(route('monthly-contributions.index'), {
-                                    page: pagination.current,
-                                    per_page: pagination.pageSize,
-                                    search: searchInput,
-                                    year: selectedYear,
-                                }, {
-                                    preserveState: true,
-                                    preserveScroll: true,
-                                });
-                            }"
                         />
                     </div>
                 </div>
