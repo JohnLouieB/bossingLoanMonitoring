@@ -396,7 +396,7 @@ class LoanController extends Controller
             'notes' => 'nullable|string',
         ]);
 
-        AdvancePayment::create([
+        $advancePayment = AdvancePayment::create([
             'loan_id' => $loan->id,
             'amount' => $validated['amount'],
             'payment_date' => $validated['payment_date'],
@@ -406,6 +406,31 @@ class LoanController extends Controller
         // Update the loan balance (balance = balance - advance payment amount)
         $loan->balance = max(0, $loan->balance - $validated['amount']);
         $loan->save();
+
+        // Add advance payment to capital for the loan's year
+        $loanYear = $loan->year;
+        if ($loanYear) {
+            $capitalEntry = CapitalCashFlow::firstOrCreate(
+                ['year' => $loanYear],
+                ['capital' => 0]
+            );
+            $capitalEntry->capital += $validated['amount'];
+            $capitalEntry->save();
+
+            // Create capital transaction for advance payment
+            $loan->load('member');
+            $borrowerName = $loan->member_id 
+                ? ($loan->member ? $loan->member->first_name . ' ' . $loan->member->last_name : 'Unknown Member')
+                : ($loan->non_member_name ?? 'Unknown');
+
+            CapitalTransaction::create([
+                'year' => $loanYear,
+                'loan_id' => $loan->id,
+                'type' => 'addition',
+                'amount' => $validated['amount'],
+                'description' => 'Advance payment from ' . $borrowerName . ' - Loan ID: ' . $loan->id,
+            ]);
+        }
 
         // Recalculate monthly interest for remaining months
         $currentYear = date('Y');
@@ -449,6 +474,7 @@ class LoanController extends Controller
         }
 
         $amount = $advancePayment->amount;
+        $loanYear = $loan->year;
 
         // Delete the advance payment
         $advancePayment->delete();
@@ -456,6 +482,25 @@ class LoanController extends Controller
         // Update the loan balance (balance = balance + advance payment amount)
         $loan->balance = min($loan->amount, $loan->balance + $amount);
         $loan->save();
+
+        // Deduct advance payment from capital when reverted
+        if ($loanYear) {
+            $capitalEntry = CapitalCashFlow::where('year', $loanYear)->first();
+            if ($capitalEntry) {
+                $capitalEntry->capital = max(0, $capitalEntry->capital - $amount);
+                $capitalEntry->save();
+            }
+
+            // Delete the capital transaction for this advance payment
+            CapitalTransaction::where('loan_id', $loan->id)
+                ->where('year', $loanYear)
+                ->where('type', 'addition')
+                ->where('description', 'like', '%Advance payment%')
+                ->where('amount', $amount)
+                ->orderBy('created_at', 'desc')
+                ->first()
+                ?->delete();
+        }
 
         // Recalculate monthly interest for remaining months
         $currentYear = date('Y');

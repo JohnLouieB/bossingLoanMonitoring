@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\CapitalCashFlow;
 use App\Models\CapitalTransaction;
+use App\Models\Loan;
+use App\Models\MonthlyContribution;
 use App\Models\MonthlyInterestPayment;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -18,15 +20,51 @@ class CapitalCashFlowController extends Controller
     {
         $currentYear = $request->get('year', date('Y'));
         
+        // Calculate total interest collected for this year
+        $totalInterestCollected = MonthlyInterestPayment::where('status', 'paid')
+            ->whereHas('loan', function ($query) use ($currentYear) {
+                $query->where('year', $currentYear);
+            })
+            ->sum('interest_amount');
+
+        // Calculate total contributions collected for this year
+        $totalContributionsCollected = MonthlyContribution::where('year', $currentYear)
+            ->where('status', 'paid')
+            ->sum('amount');
+
+        // Calculate total advance payments collected for this year
+        $totalAdvancePayments = CapitalTransaction::where('year', $currentYear)
+            ->where('type', 'addition')
+            ->where('description', 'like', '%Advance payment%')
+            ->sum('amount');
+
         // Get or create capital entry for the selected year
         $capitalEntry = CapitalCashFlow::firstOrCreate(
             ['year' => $currentYear],
             ['capital' => 0]
         );
 
-        // Get transactions for the selected year (only loan disbursements, exclude interest additions)
+        // Base capital = initial capital (manually set) + total money collected (interest + contributions + advance payments)
+        // The initial capital is stored in capitalEntry->capital, and money collected is added via transactions
+        // So base capital = initial capital + total money collected
+        $totalMoneyCollected = $totalInterestCollected + $totalContributionsCollected + $totalAdvancePayments;
+        $baseCapital = $capitalEntry->capital + $totalMoneyCollected;
+
+        // Calculate total remaining balance of all loans for this year
+        $totalLoanBalances = Loan::where('year', $currentYear)
+            ->get()
+            ->sum(function ($loan) {
+                // Calculate remaining balance: loan amount - total advance payments
+                $totalAdvancePayments = $loan->advancePayments()->sum('amount');
+                return max(0, $loan->amount - $totalAdvancePayments);
+            });
+
+        // Calculate available capital: base capital (total collected) - loan balances
+        $availableCapital = max(0, $baseCapital - $totalLoanBalances);
+
+        // Get transactions for the selected year
+        // Include loan disbursements (deductions) and advance payments (additions)
         $transactions = CapitalTransaction::where('year', $currentYear)
-            ->where('type', 'deduction') // Only show loan disbursements (deductions)
             ->with('loan')
             ->orderBy('created_at', 'desc')
             ->get();
@@ -68,17 +106,49 @@ class CapitalCashFlowController extends Controller
             ->filter() // Remove null entries (loans without year)
             ->values(); // Re-index array
 
+        // Get all paid monthly contributions for the selected year
+        $contributions = MonthlyContribution::where('year', $currentYear)
+            ->where('status', 'paid')
+            ->with('member')
+            ->orderBy('created_at', 'desc') // Sort by when it was marked as paid (latest first)
+            ->orderBy('payment_date', 'desc')
+            ->get()
+            ->map(function ($contribution) {
+                $member = $contribution->member;
+                $memberName = $member 
+                    ? $member->first_name . ' ' . $member->last_name
+                    : 'Unknown Member';
+                
+                return [
+                    'id' => $contribution->id,
+                    'member_name' => $memberName,
+                    'amount' => $contribution->amount,
+                    'month' => $contribution->month,
+                    'year' => $contribution->year,
+                    'payment_date' => $contribution->payment_date,
+                    'created_at' => $contribution->created_at,
+                    'member_id' => $contribution->member_id,
+                ];
+            });
+
         return Inertia::render('CapitalCashFlow/Index', [
-            'capital' => $capitalEntry->capital,
+            'capital' => $baseCapital, // Base capital = total money collected (interest + contributions + advance payments)
+            'availableCapital' => $availableCapital, // Available capital = base capital - loan balances
+            'totalLoanBalances' => $totalLoanBalances, // Sum of all remaining loan balances
+            'totalInterestCollected' => $totalInterestCollected, // Total interest collected for this year
+            'totalContributionsCollected' => $totalContributionsCollected, // Total contributions collected for this year
+            'totalAdvancePayments' => $totalAdvancePayments, // Total advance payments collected for this year
             'currentYear' => (int) $currentYear,
             'filters' => $request->only(['year']),
             'transactions' => $transactions,
             'interestPayments' => $interestPayments,
+            'contributions' => $contributions,
         ]);
     }
 
     /**
      * Update the capital for the selected year.
+     * This updates the initial/base capital amount.
      */
     public function update(Request $request)
     {
