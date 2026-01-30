@@ -39,15 +39,16 @@ class CapitalCashFlowController extends Controller
             ->sum('amount');
 
         // Get or create capital entry for the selected year
+        // This stores the initial/manual capital amount
         $capitalEntry = CapitalCashFlow::firstOrCreate(
             ['year' => $currentYear],
             ['capital' => 0]
         );
 
-        // Base capital = initial capital (manually set) + total money collected (interest + contributions + advance payments)
-        // The initial capital is stored in capitalEntry->capital, and money collected is added via transactions
-        // So base capital = initial capital + total money collected
+        // Calculate total money collected (interest + contributions + advance payments)
         $totalMoneyCollected = $totalInterestCollected + $totalContributionsCollected + $totalAdvancePayments;
+        
+        // Base capital = initial capital (manually set) + total money collected
         $baseCapital = $capitalEntry->capital + $totalMoneyCollected;
 
         // Calculate total remaining balance of all loans for this year
@@ -132,7 +133,8 @@ class CapitalCashFlowController extends Controller
             });
 
         return Inertia::render('CapitalCashFlow/Index', [
-            'capital' => $baseCapital, // Base capital = total money collected (interest + contributions + advance payments)
+            'initialCapital' => $capitalEntry->capital, // Initial/manual capital amount
+            'baseCapital' => $baseCapital, // Base capital = initial + total money collected
             'availableCapital' => $availableCapital, // Available capital = base capital - loan balances
             'totalLoanBalances' => $totalLoanBalances, // Sum of all remaining loan balances
             'totalInterestCollected' => $totalInterestCollected, // Total interest collected for this year

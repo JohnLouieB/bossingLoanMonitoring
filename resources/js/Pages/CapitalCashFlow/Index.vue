@@ -8,7 +8,11 @@ import { SearchOutlined } from '@ant-design/icons-vue';
 const CollapsePanel = Collapse.Panel;
 
 const props = defineProps({
-    capital: {
+    initialCapital: {
+        type: Number,
+        default: 0,
+    },
+    baseCapital: {
         type: Number,
         default: 0,
     },
@@ -72,12 +76,12 @@ const yearOptions = Array.from({ length: 11 }, (_, i) => {
 });
 
 const capitalForm = useForm({
-    capital: props.capital,
+    capital: props.initialCapital,
     year: props.currentYear,
 });
 
-// Watch for changes in capital prop
-watch(() => props.capital, (newVal) => {
+// Watch for changes in initialCapital prop
+watch(() => props.initialCapital, (newVal) => {
     capitalForm.capital = newVal;
 }, { immediate: true });
 
@@ -410,11 +414,11 @@ const contributionColumns = [
                                         </Button>
                                     </div>
                                 </div>
-                                <div style="margin-top: 16px; padding: 12px; background-color: #f0f0f0; border-radius: 4px;">
+                                    <div style="margin-top: 16px; padding: 12px; background-color: #f0f0f0; border-radius: 4px;">
                                     <div style="margin-bottom: 8px;">
                                         <span style="font-weight: 500;">Base Capital (Initial + Total Money Collected): </span>
                                         <span style="font-weight: bold; color: #1890ff; font-size: 18px;">
-                                            {{ formatCurrency(capital) }}
+                                            {{ formatCurrency(baseCapital) }}
                                         </span>
                                     </div>
                                     <div style="font-size: 12px; color: #666; margin-top: 4px;">
