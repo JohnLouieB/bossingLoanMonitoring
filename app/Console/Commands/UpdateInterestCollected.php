@@ -46,11 +46,20 @@ class UpdateInterestCollected extends Command
         }
 
         // Find all interest-related capital transactions for the year
-        // Interest transactions are additions with loan_id and description containing "Interest payment"
+        // Interest transactions are additions with:
+        // 1. loan_id not null and description containing "Interest payment" (individual payments)
+        // 2. loan_id null and description containing "Interest collected" (aggregate transactions)
         $interestTransactions = CapitalTransaction::where('year', $year)
             ->where('type', 'addition')
-            ->whereNotNull('loan_id')
-            ->where('description', 'like', '%Interest payment%')
+            ->where(function ($query) {
+                $query->where(function ($q) {
+                    $q->whereNotNull('loan_id')
+                      ->where('description', 'like', '%Interest payment%');
+                })->orWhere(function ($q) {
+                    $q->whereNull('loan_id')
+                      ->where('description', 'like', '%Interest collected%');
+                });
+            })
             ->get();
 
         $currentTotal = $interestTransactions->sum('amount');
@@ -83,11 +92,18 @@ class UpdateInterestCollected extends Command
             $capitalEntry->capital += $capitalDifference;
             $capitalEntry->save();
 
-            // Delete old interest transactions
+            // Delete old interest transactions (both individual and aggregate)
             $deletedCount = CapitalTransaction::where('year', $year)
                 ->where('type', 'addition')
-                ->whereNotNull('loan_id')
-                ->where('description', 'like', '%Interest payment%')
+                ->where(function ($query) {
+                    $query->where(function ($q) {
+                        $q->whereNotNull('loan_id')
+                          ->where('description', 'like', '%Interest payment%');
+                    })->orWhere(function ($q) {
+                        $q->whereNull('loan_id')
+                          ->where('description', 'like', '%Interest collected%');
+                    });
+                })
                 ->delete();
 
             // Create new aggregate transaction
