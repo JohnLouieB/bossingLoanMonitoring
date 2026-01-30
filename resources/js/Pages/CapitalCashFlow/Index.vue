@@ -1,8 +1,8 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, router, useForm, usePage } from '@inertiajs/vue3';
+import { Head, router, usePage } from '@inertiajs/vue3';
 import { ref, watch, computed, h } from 'vue';
-import { InputNumber, Select, Button, Card, message, Table, Tag, Collapse, Input } from 'ant-design-vue';
+import { Select, Card, message, Table, Tag, Collapse, Input } from 'ant-design-vue';
 import { SearchOutlined } from '@ant-design/icons-vue';
 
 const CollapsePanel = Collapse.Panel;
@@ -75,25 +75,9 @@ const yearOptions = Array.from({ length: 11 }, (_, i) => {
     };
 });
 
-const capitalForm = useForm({
-    capital: props.initialCapital,
-    year: props.currentYear,
-});
-
-// Watch for changes in initialCapital prop
-watch(() => props.initialCapital, (newVal) => {
-    capitalForm.capital = newVal;
-}, { immediate: true });
-
-// Watch for changes in availableCapital prop
-watch(() => props.availableCapital, (newVal) => {
-    // Available capital is calculated, no need to update form
-}, { immediate: true });
-
 // Watch for changes in currentYear prop
 watch(() => props.currentYear, (newYear) => {
     selectedYear.value = newYear;
-    capitalForm.year = newYear;
 }, { immediate: true });
 
 // Handle year change
@@ -104,19 +88,6 @@ const handleYearChange = (year) => {
     }, {
         preserveState: true,
         preserveScroll: true,
-    });
-};
-
-// Handle capital update
-const handleUpdateCapital = () => {
-    capitalForm.patch(route('capital-cash-flow.update'), {
-        preserveScroll: true,
-        onSuccess: () => {
-            message.success('Capital updated successfully');
-        },
-        onError: () => {
-            message.error('Please fix the errors in the form');
-        },
     });
 };
 
@@ -383,48 +354,8 @@ const contributionColumns = [
                         <!-- Capital Card -->
                         <Card title="Capital" style="max-width: 600px;">
                             <div style="margin-bottom: 16px;">
-                                <p style="color: #666; margin-bottom: 12px;">
-                                    Enter the initial capital amount for the year {{ selectedYear }}. Total money collected will be added automatically.
-                                </p>
-                                <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-                                    <div style="flex: 1; min-width: 200px;">
-                                        <label style="display: block; margin-bottom: 8px; font-weight: 500;">
-                                            Initial Capital Amount
-                                        </label>
-                                        <InputNumber
-                                            v-model:value="capitalForm.capital"
-                                            :min="0"
-                                            :precision="2"
-                                            style="width: 100%;"
-                                            :formatter="(value) => `₱ ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')"
-                                            :parser="(value) => value.replace(/₱\s?|(,*)/g, '')"
-                                            :disabled="!isAdmin"
-                                        />
-                                        <div v-if="capitalForm.errors.capital" style="color: #ff4d4f; margin-top: 4px; font-size: 14px;">
-                                            {{ capitalForm.errors.capital }}
-                                        </div>
-                                    </div>
-                                    <div v-if="isAdmin" style="margin-top: 32px;">
-                                        <Button 
-                                            type="primary" 
-                                            @click="handleUpdateCapital"
-                                            :loading="capitalForm.processing"
-                                        >
-                                            Update Capital
-                                        </Button>
-                                    </div>
-                                </div>
-                                    <div style="margin-top: 16px; padding: 12px; background-color: #f0f0f0; border-radius: 4px;">
+                                    <div style="padding: 12px; background-color: #f0f0f0; border-radius: 4px;">
                                     <div style="margin-bottom: 8px;">
-                                        <span style="font-weight: 500;">Base Capital (Initial + Total Money Collected): </span>
-                                        <span style="font-weight: bold; color: #1890ff; font-size: 18px;">
-                                            {{ formatCurrency(baseCapital) }}
-                                        </span>
-                                    </div>
-                                    <div style="font-size: 12px; color: #666; margin-top: 4px;">
-                                        Initial Capital + (Interest + Contributions + Advance Payments)
-                                    </div>
-                                    <div style="margin-bottom: 8px; padding-top: 8px; border-top: 1px solid #d9d9d9;">
                                         <span style="font-weight: 500;">Total Loan Balances ({{ selectedYear }}): </span>
                                         <span style="font-weight: bold; color: #ff4d4f; font-size: 16px;">
                                             {{ formatCurrency(totalLoanBalances) }}

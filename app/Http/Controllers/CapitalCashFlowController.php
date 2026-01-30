@@ -60,8 +60,8 @@ class CapitalCashFlowController extends Controller
                 return max(0, $loan->amount - $totalAdvancePayments);
             });
 
-        // Calculate available capital: base capital (total collected) - loan balances
-        $availableCapital = max(0, $baseCapital - $totalLoanBalances);
+        // Calculate available capital: sum of interest collected, contributions collected, and advance payments
+        $availableCapital = $totalInterestCollected + $totalContributionsCollected + $totalAdvancePayments;
 
         // Get transactions for the selected year
         // Include loan disbursements (deductions) and advance payments (additions)
@@ -135,7 +135,7 @@ class CapitalCashFlowController extends Controller
         return Inertia::render('CapitalCashFlow/Index', [
             'initialCapital' => $capitalEntry->capital, // Initial/manual capital amount
             'baseCapital' => $baseCapital, // Base capital = initial + total money collected
-            'availableCapital' => $availableCapital, // Available capital = base capital - loan balances
+            'availableCapital' => $availableCapital, // Available capital = interest + contributions + advance payments
             'totalLoanBalances' => $totalLoanBalances, // Sum of all remaining loan balances
             'totalInterestCollected' => $totalInterestCollected, // Total interest collected for this year
             'totalContributionsCollected' => $totalContributionsCollected, // Total contributions collected for this year
