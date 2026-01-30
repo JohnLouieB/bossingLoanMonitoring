@@ -189,14 +189,10 @@ const filteredInterestPayments = computed(() => {
     });
 });
 
-// Calculate total interest collected (from filtered results)
+// Use totalInterestCollected from props (which uses aggregate transaction if available)
+// This ensures consistency with the Transaction History
 const totalInterestCollected = computed(() => {
-    if (!filteredInterestPayments.value || filteredInterestPayments.value.length === 0) {
-        return 0;
-    }
-    return filteredInterestPayments.value.reduce((total, payment) => {
-        return total + parseFloat(payment.interest_amount || 0);
-    }, 0);
+    return props.totalInterestCollected || 0;
 });
 
 // Filter contributions by member name

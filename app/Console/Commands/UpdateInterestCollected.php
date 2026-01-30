@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\CapitalCashFlow;
 use App\Models\CapitalTransaction;
+use App\Models\MonthlyInterestPayment;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
@@ -62,13 +63,24 @@ class UpdateInterestCollected extends Command
             })
             ->get();
 
-        $currentTotal = $interestTransactions->sum('amount');
+        $currentTotalFromTransactions = $interestTransactions->sum('amount');
 
-        $this->info("Year: {$year}");
-        $this->info("Current interest collected: " . number_format($currentTotal, 2));
-        $this->info("New interest collected: " . number_format($newAmount, 2));
-        $this->info("Difference: " . number_format($newAmount - $currentTotal, 2));
-        $this->info("Transactions to replace: {$interestTransactions->count()}");
+        // Also check actual MonthlyInterestPayment records for loans from this year
+        $actualInterestPayments = MonthlyInterestPayment::where('status', 'paid')
+            ->whereHas('loan', function ($query) use ($year) {
+                $query->where('year', $year);
+            })
+            ->get();
+
+        $currentTotalFromPayments = $actualInterestPayments->sum('interest_amount');
+
+        $this->info("=== Year: {$year} ===");
+        $this->info("Current interest collected (from CapitalTransaction): " . number_format($currentTotalFromTransactions, 2));
+        $this->info("Current interest collected (from MonthlyInterestPayment): " . number_format($currentTotalFromPayments, 2));
+        $this->info("New interest collected (target): " . number_format($newAmount, 2));
+        $this->info("Difference: " . number_format($newAmount - $currentTotalFromTransactions, 2));
+        $this->info("CapitalTransaction records to replace: {$interestTransactions->count()}");
+        $this->info("MonthlyInterestPayment records (paid, loans from {$year}): {$actualInterestPayments->count()}");
 
         if (!$this->option('force')) {
             if (!$this->confirm('Do you want to proceed with this update?')) {
@@ -87,8 +99,10 @@ class UpdateInterestCollected extends Command
                 ['capital' => 0]
             );
 
-            // Adjust capital: subtract old total, add new amount
-            $capitalDifference = $newAmount - $currentTotal;
+            // Adjust capital: subtract old total from transactions, add new amount
+            // Note: Since availableCapital is now calculated as sum of interest + contributions + advance payments,
+            // we don't need to adjust CapitalCashFlow.capital, but we'll keep it for consistency
+            $capitalDifference = $newAmount - $currentTotalFromTransactions;
             $capitalEntry->capital += $capitalDifference;
             $capitalEntry->save();
 
@@ -119,12 +133,15 @@ class UpdateInterestCollected extends Command
 
             DB::commit();
 
+            $this->newLine();
             $this->info("✓ Successfully updated interest collected for year {$year}");
-            $this->info("✓ Deleted {$deletedCount} old transactions");
-            $this->info("✓ Capital adjusted by: " . number_format($capitalDifference, 2));
+            $this->info("✓ Deleted {$deletedCount} old CapitalTransaction records");
+            $this->info("✓ CapitalCashFlow.capital adjusted by: " . number_format($capitalDifference, 2));
             if ($newAmount > 0) {
-                $this->info("✓ Created new aggregate transaction");
+                $this->info("✓ Created new aggregate CapitalTransaction: 'Interest collected for {$year} (aggregate)'");
             }
+            $this->info("✓ Note: MonthlyInterestPayment records remain unchanged (they represent actual payment records)");
+            $this->info("✓ The Capital and Cash Flow page will now show interest collected as: " . number_format($newAmount, 2));
 
             return Command::SUCCESS;
         } catch (\Exception $e) {

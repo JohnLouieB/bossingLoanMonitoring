@@ -21,11 +21,28 @@ class CapitalCashFlowController extends Controller
         $currentYear = $request->get('year', date('Y'));
         
         // Calculate total interest collected for this year
-        $totalInterestCollected = MonthlyInterestPayment::where('status', 'paid')
-            ->whereHas('loan', function ($query) use ($currentYear) {
-                $query->where('year', $currentYear);
+        // First check if there's an aggregate CapitalTransaction record (created by artisan command)
+        // Aggregate transactions have: type='addition', loan_id=null, description contains "Interest collected" and "(aggregate)"
+        $aggregateInterestTransaction = CapitalTransaction::where('year', $currentYear)
+            ->where('type', 'addition')
+            ->whereNull('loan_id')
+            ->where(function ($query) {
+                $query->where('description', 'like', '%Interest collected%')
+                      ->where('description', 'like', '%aggregate%');
             })
-            ->sum('interest_amount');
+            ->first();
+
+        if ($aggregateInterestTransaction) {
+            // Use the aggregate transaction amount
+            $totalInterestCollected = $aggregateInterestTransaction->amount;
+        } else {
+            // Fall back to calculating from MonthlyInterestPayment records
+            $totalInterestCollected = MonthlyInterestPayment::where('status', 'paid')
+                ->whereHas('loan', function ($query) use ($currentYear) {
+                    $query->where('year', $currentYear);
+                })
+                ->sum('interest_amount');
+        }
 
         // Calculate total contributions collected for this year
         $totalContributionsCollected = MonthlyContribution::where('year', $currentYear)
