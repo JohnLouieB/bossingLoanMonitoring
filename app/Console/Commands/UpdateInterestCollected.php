@@ -2,7 +2,7 @@
 
 namespace App\Console\Commands;
 
-use App\Models\CapitalCashFlow;
+use App\Models\CashFlow;
 use App\Models\CapitalTransaction;
 use App\Models\MonthlyInterestPayment;
 use Illuminate\Console\Command;
@@ -93,18 +93,16 @@ class UpdateInterestCollected extends Command
         try {
             DB::beginTransaction();
 
-            // Get or create capital entry for the year
-            $capitalEntry = CapitalCashFlow::firstOrCreate(
-                ['year' => $year],
-                ['capital' => 0]
-            );
+            // Get or create cash flow entry for the year
+            $cashFlow = CashFlow::getOrCreate($year);
 
             // Adjust capital: subtract old total from transactions, add new amount
-            // Note: Since availableCapital is now calculated as sum of interest + contributions + advance payments,
-            // we don't need to adjust CapitalCashFlow.capital, but we'll keep it for consistency
             $capitalDifference = $newAmount - $currentTotalFromTransactions;
-            $capitalEntry->capital += $capitalDifference;
-            $capitalEntry->save();
+            $cashFlow->capital += $capitalDifference;
+            
+            // Update interest_collected field in cash_flows table
+            $cashFlow->interest_collected = $newAmount;
+            $cashFlow->save();
 
             // Delete old interest transactions (both individual and aggregate)
             $deletedCount = CapitalTransaction::where('year', $year)
@@ -136,7 +134,8 @@ class UpdateInterestCollected extends Command
             $this->newLine();
             $this->info("✓ Successfully updated interest collected for year {$year}");
             $this->info("✓ Deleted {$deletedCount} old CapitalTransaction records");
-            $this->info("✓ CapitalCashFlow.capital adjusted by: " . number_format($capitalDifference, 2));
+            $this->info("✓ CashFlow.capital adjusted by: " . number_format($capitalDifference, 2));
+            $this->info("✓ CashFlow.interest_collected updated to: " . number_format($newAmount, 2));
             if ($newAmount > 0) {
                 $this->info("✓ Created new aggregate CapitalTransaction: 'Interest collected for {$year} (aggregate)'");
             }

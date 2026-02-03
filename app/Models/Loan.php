@@ -16,7 +16,6 @@ class Loan extends Model
         'interest_rate',
         'status',
         'description',
-        'notes',
         'year',
     ];
 

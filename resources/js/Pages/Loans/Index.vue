@@ -47,6 +47,8 @@ const isLoanDetailModalVisible = ref(false);
 const isCreateLoanModalVisible = ref(false);
 const isMonthlyInterestModalVisible = ref(false);
 const isDeleteLoanModalVisible = ref(false);
+const isAvailableCapitalModalVisible = ref(false);
+const availableCapitalAmount = ref(0);
 const selectedLoan = ref(null);
 const selectedMemberForLoans = ref(null);
 const monthlyInterestData = ref(props.monthlyInterestPayments || []);
@@ -97,7 +99,6 @@ const loanForm = useForm({
     interest_rate: '',
     status: 'pending',
     description: '',
-    notes: '',
     year: new Date().getFullYear(),
 });
 
@@ -254,7 +255,7 @@ const updateMonthlyInterestStatus = (month, year, currentStatus) => {
     const newStatus = currentStatus === 'paid' ? 'pending' : 'paid';
     
     monthlyInterestForm.month = month;
-    monthlyInterestForm.year = new Date().getFullYear();
+    monthlyInterestForm.year = year; // Use the year from the record, not current year
     monthlyInterestForm.status = newStatus;
     monthlyInterestForm.payment_date = newStatus === 'paid' ? new Date().toISOString().split('T')[0] : null;
     
@@ -461,6 +462,8 @@ const handleYearChange = () => {
                     selectedMemberForLoans.value.loans[loanIndex].year = loanStatusForm.year;
                 }
             }
+            // Reload monthly interest data and advance payments to show transferred records
+            loadMonthlyInterestData();
         },
         onError: () => {
             message.error('Failed to update loan year');
@@ -543,13 +546,48 @@ const handleCreateLoan = () => {
         preserveScroll: true,
         onSuccess: () => {
             isCreateLoanModalVisible.value = false;
+            isAvailableCapitalModalVisible.value = false;
             message.success('Loan created successfully');
             loanForm.reset();
         },
-        onError: () => {
-            message.error('Please fix the errors in the form');
+        onError: (errors) => {
+            // Check if available capital error
+            if (errors.amount === 'Loan amount exceeds available capital' && errors.available_capital) {
+                availableCapitalAmount.value = parseFloat(errors.available_capital);
+                isAvailableCapitalModalVisible.value = true;
+                return;
+            }
+            
+            // Show specific validation errors
+            if (errors.non_member_name) {
+                message.error('Non-member name is required');
+            } else if (errors.member_id) {
+                message.error('Please select a member');
+            } else if (errors.amount) {
+                message.error('Please enter a valid loan amount');
+            } else if (errors.year) {
+                message.error('Please select a year');
+            } else if (errors.error) {
+                message.error(errors.error);
+            } else {
+                message.error('Please fix the errors in the form');
+            }
         },
     });
+};
+
+// Handle update amount to available capital
+const handleUpdateAmountToAvailableCapital = () => {
+    loanForm.amount = availableCapitalAmount.value;
+    isAvailableCapitalModalVisible.value = false;
+    // Retry creating the loan with updated amount
+    handleCreateLoan();
+};
+
+// Handle cancel available capital modal
+const handleCancelAvailableCapitalModal = () => {
+    isAvailableCapitalModalVisible.value = false;
+    availableCapitalAmount.value = 0;
 };
 
 // Format currency
@@ -756,8 +794,7 @@ const columns = [
                 </a-form-item>
 
                 <a-form-item
-                    v-if="showMemberSelect"
-                    label="Select Member"
+                    :label="showMemberSelect ? 'Select Member' : 'Select Member as Co-Maker'"
                     :validate-status="loanForm.errors.member_id ? 'error' : ''"
                     :help="loanForm.errors.member_id"
                 >
@@ -773,7 +810,7 @@ const columns = [
                 </a-form-item>
 
                 <a-form-item
-                    v-else
+                    v-if="!showMemberSelect"
                     label="Non-Member Name"
                     :validate-status="loanForm.errors.non_member_name ? 'error' : ''"
                     :help="loanForm.errors.non_member_name"
@@ -850,17 +887,6 @@ const columns = [
                     />
                 </a-form-item>
 
-                <a-form-item
-                    label="Notes"
-                    :validate-status="loanForm.errors.notes ? 'error' : ''"
-                    :help="loanForm.errors.notes"
-                >
-                    <a-textarea
-                        v-model:value="loanForm.notes"
-                        placeholder="Enter notes (optional)"
-                        :rows="3"
-                    />
-                </a-form-item>
             </a-form>
         </a-modal>
 
@@ -961,11 +987,8 @@ const columns = [
                             </span>
                         </div>
                     </a-descriptions-item>
-                    <a-descriptions-item label="Description" v-if="selectedLoan.description">
-                        {{ selectedLoan.description }}
-                    </a-descriptions-item>
-                    <a-descriptions-item label="Notes" v-if="selectedLoan.notes">
-                        {{ selectedLoan.notes }}
+                    <a-descriptions-item label="Description">
+                        {{ selectedLoan.description || 'N/A' }}
                     </a-descriptions-item>
                     <a-descriptions-item label="Created At">
                         {{ new Date(selectedLoan.created_at).toLocaleString() }}
@@ -1129,6 +1152,33 @@ const columns = [
                         style="width: 100%;"
                     />
                 </a-form-item>
+            </div>
+        </a-modal>
+
+        <!-- Available Capital Warning Modal -->
+        <a-modal
+            v-model:open="isAvailableCapitalModalVisible"
+            title="Insufficient Available Capital"
+            ok-text="Update Amount"
+            cancel-text="Cancel"
+            ok-type="primary"
+            @ok="handleUpdateAmountToAvailableCapital"
+            @cancel="handleCancelAvailableCapitalModal"
+        >
+            <div>
+                <p style="margin-bottom: 16px; color: #ff4d4f; font-weight: 500;">
+                    The loan amount exceeds the available capital for the selected year.
+                </p>
+                <div style="background: #f5f5f5; padding: 16px; border-radius: 4px; margin-bottom: 16px;">
+                    <p style="margin: 8px 0;"><strong>Requested Amount:</strong> {{ formatCurrency(loanForm.amount) }}</p>
+                    <p style="margin: 8px 0;"><strong>Available Capital:</strong> {{ formatCurrency(availableCapitalAmount) }}</p>
+                    <p style="margin: 8px 0; color: #ff4d4f; font-weight: 600;">
+                        <strong>Remaining Available Capital:</strong> {{ formatCurrency(availableCapitalAmount) }}
+                    </p>
+                </div>
+                <p style="margin-bottom: 12px; color: #666;">
+                    Would you like to update the loan amount to the maximum available capital?
+                </p>
             </div>
         </a-modal>
     </AuthenticatedLayout>

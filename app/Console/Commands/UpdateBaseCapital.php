@@ -2,7 +2,7 @@
 
 namespace App\Console\Commands;
 
-use App\Models\CapitalCashFlow;
+use App\Models\CashFlow;
 use App\Models\CapitalTransaction;
 use App\Models\Loan;
 use App\Models\MonthlyContribution;
@@ -76,13 +76,10 @@ class UpdateBaseCapital extends Command
                     return max(0, $loan->amount - $totalAdvancePayments);
                 });
 
-            // Get current capital entry
-            $capitalEntry = CapitalCashFlow::firstOrCreate(
-                ['year' => $year],
-                ['capital' => 0]
-            );
+            // Get current cash flow entry
+            $cashFlow = CashFlow::getOrCreate($year);
 
-            $currentInitialCapital = $capitalEntry->capital;
+            $currentInitialCapital = $cashFlow->capital;
             $currentBaseCapital = $currentInitialCapital + $totalMoneyCollected;
             $currentAvailableCapital = max(0, $currentBaseCapital - $totalLoanBalances);
 
@@ -141,8 +138,8 @@ class UpdateBaseCapital extends Command
             DB::beginTransaction();
 
             // Update initial capital
-            $capitalEntry->capital = $requiredInitialCapital;
-            $capitalEntry->save();
+            $cashFlow->capital = $requiredInitialCapital;
+            $cashFlow->save();
 
             DB::commit();
 

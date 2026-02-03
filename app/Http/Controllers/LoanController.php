@@ -3,12 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Models\AdvancePayment;
-use App\Models\CapitalCashFlow;
+use App\Models\CashFlow;
 use App\Models\CapitalTransaction;
 use App\Models\Loan;
 use App\Models\Member;
 use App\Models\MonthlyInterestPayment;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -114,17 +115,25 @@ class LoanController extends Controller
      */
     public function store(Request $request)
     {
-        $validated = $request->validate([
+        // Prepare data for validation - convert empty strings to null
+        $data = $request->all();
+        if (isset($data['non_member_name']) && $data['non_member_name'] === '') {
+            $data['non_member_name'] = null;
+        }
+        if (isset($data['member_id']) && $data['member_id'] === '') {
+            $data['member_id'] = null;
+        }
+        
+        $validated = validator($data, [
             'borrower_type' => 'required|in:member,non-member',
-            'member_id' => 'required_if:borrower_type,member|nullable|exists:members,id',
+            'member_id' => 'required|exists:members,id', // Required for both member and non-member (as co-maker)
             'non_member_name' => 'required_if:borrower_type,non-member|nullable|string|max:255',
             'amount' => 'required|numeric|min:0',
             'interest_rate' => 'nullable|numeric|min:0|max:100',
             'status' => 'nullable|in:pending,approved,rejected,paid',
             'description' => 'nullable|string',
-            'notes' => 'nullable|string',
             'year' => 'required|integer|min:2000|max:2100',
-        ]);
+        ])->validate();
 
         // Prepare loan data
         $loanData = [
@@ -133,34 +142,69 @@ class LoanController extends Controller
             'interest_rate' => $validated['interest_rate'] ?? 0,
             'status' => $validated['status'] ?? 'pending',
             'description' => $validated['description'] ?? null,
-            'notes' => $validated['notes'] ?? null,
             'year' => $validated['year'],
         ];
 
-        // Set member_id or non_member_name based on borrower type
+        // Set member_id and non_member_name based on borrower type
+        // For non-member loans, member_id is the co-maker
         if ($validated['borrower_type'] === 'member') {
+            if (empty($validated['member_id'])) {
+                return back()->withErrors(['member_id' => 'Please select a member'])->withInput();
+            }
             $loanData['member_id'] = $validated['member_id'];
             $loanData['non_member_name'] = null;
         } else {
-            $loanData['member_id'] = null;
-            $loanData['non_member_name'] = $validated['non_member_name'];
+            // Non-member loan: requires both non_member_name and member_id (as co-maker)
+            if (empty($validated['non_member_name'])) {
+                return back()->withErrors(['non_member_name' => 'Please enter a non-member name'])->withInput();
+            }
+            if (empty($validated['member_id'])) {
+                return back()->withErrors(['member_id' => 'Please select a member as co-maker'])->withInput();
+            }
+            $loanData['member_id'] = $validated['member_id']; // Co-maker
+            $loanData['non_member_name'] = trim($validated['non_member_name']);
         }
 
-        $loan = Loan::create($loanData);
-
-        // Deduct loan amount from capital for the selected year
+        // Check available capital before creating the loan
         $year = $validated['year'];
         $loanAmount = $validated['amount'];
+        $availableCapital = CashFlow::calculateAvailableCapital($year);
+        
+        if ($loanAmount > $availableCapital) {
+            return back()
+                ->withErrors([
+                    'amount' => 'Loan amount exceeds available capital',
+                    'available_capital' => (string) $availableCapital, // Pass as string in errors
+                ])
+                ->withInput();
+        }
 
-        // Get or create capital entry for the year
-        $capitalEntry = CapitalCashFlow::firstOrCreate(
-            ['year' => $year],
-            ['capital' => 0]
-        );
+        try {
+            $loan = Loan::create($loanData);
 
-        // Deduct the loan amount from capital
-        $capitalEntry->capital = max(0, $capitalEntry->capital - $loanAmount);
-        $capitalEntry->save();
+            // Update cash flow for the selected year
+
+            // Get or create cash flow entry for the year
+            $cashFlow = CashFlow::getOrCreate($year);
+
+            // Update money_released for the year (includes the newly created loan)
+            // Recalculate by summing all loans for this year
+            $moneyReleased = Loan::where('year', $year)->sum('amount') ?? 0;
+            $cashFlow->money_released = $moneyReleased;
+
+            // Deduct the loan amount from capital (for backward compatibility with existing logic)
+            $cashFlow->capital = max(0, $cashFlow->capital - $loanAmount);
+            $cashFlow->save();
+        } catch (\Exception $e) {
+            Log::error('Error creating loan: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+                'data' => $loanData ?? null,
+            ]);
+            
+            return back()->withErrors([
+                'error' => 'Failed to create loan: ' . $e->getMessage()
+            ])->withInput();
+        }
 
         // Record the transaction
         $borrowerName = $validated['borrower_type'] === 'member' 
@@ -189,14 +233,14 @@ class LoanController extends Controller
     {
         $loan->load(['member', 'monthlyInterestPayments', 'advancePayments']);
 
-        // Get current year
-        $currentYear = date('Y');
+        // Use loan's year if set, otherwise use current year
+        $targetYear = $loan->year ?? date('Y');
 
-        // Initialize monthly interest payments for current year if they don't exist
+        // Initialize monthly interest payments for the loan's year if they don't exist
         for ($month = 1; $month <= 12; $month++) {
             $existingPayment = MonthlyInterestPayment::where('loan_id', $loan->id)
                 ->where('month', $month)
-                ->where('year', $currentYear)
+                ->where('year', $targetYear)
                 ->first();
 
             if (! $existingPayment) {
@@ -206,7 +250,7 @@ class LoanController extends Controller
                 MonthlyInterestPayment::create([
                     'loan_id' => $loan->id,
                     'month' => $month,
-                    'year' => $currentYear,
+                    'year' => $targetYear,
                     'interest_amount' => $interestAmount,
                     'status' => 'pending',
                 ]);
@@ -226,9 +270,9 @@ class LoanController extends Controller
         $totalAdvancePayments = $loan->advancePayments->sum('amount');
         $balance = max(0, $loan->amount - $totalAdvancePayments);
         $loan->setAttribute('balance', $balance);
-        $loan->makeVisible(['balance']);
+        $loan->makeVisible(['balance', 'description']);
 
-        $monthlyInterestPayments = $loan->monthlyInterestPayments()->where('year', $currentYear)->get()->toArray();
+        $monthlyInterestPayments = $loan->monthlyInterestPayments()->where('year', $targetYear)->get()->toArray();
 
         // Return JSON for AJAX requests (used in modal via fetch)
         if ($request->wantsJson() && ! $request->header('X-Inertia')) {
@@ -268,7 +312,7 @@ class LoanController extends Controller
                 $totalAdvancePayments = $loan->advancePayments->sum('amount');
                 $balance = max(0, $loan->amount - $totalAdvancePayments);
                 $loan->setAttribute('balance', $balance);
-                $loan->makeVisible(['balance']);
+                $loan->makeVisible(['balance', 'description']);
 
                 return $loan;
             });
@@ -322,12 +366,9 @@ class LoanController extends Controller
         if ($loanYear) {
             if ($oldStatus === 'pending' && $newStatus === 'paid') {
                 // Add interest to capital when marked as paid
-                $capitalEntry = CapitalCashFlow::firstOrCreate(
-                    ['year' => $loanYear],
-                    ['capital' => 0]
-                );
-                $capitalEntry->capital += $interestAmount;
-                $capitalEntry->save();
+                $cashFlow = CashFlow::getOrCreate($loanYear);
+                $cashFlow->capital += $interestAmount;
+                $cashFlow->save();
 
                 // Create capital transaction for interest payment
                 $loan->load('member');
@@ -346,10 +387,10 @@ class LoanController extends Controller
                 ]);
             } elseif ($oldStatus === 'paid' && $newStatus === 'pending') {
                 // Deduct interest from capital when marked as pending (revert)
-                $capitalEntry = CapitalCashFlow::where('year', $loanYear)->first();
-                if ($capitalEntry) {
-                    $capitalEntry->capital = max(0, $capitalEntry->capital - $interestAmount);
-                    $capitalEntry->save();
+                $cashFlow = CashFlow::where('year', $loanYear)->first();
+                if ($cashFlow) {
+                    $cashFlow->capital = max(0, $cashFlow->capital - $interestAmount);
+                    $cashFlow->save();
                 }
 
                 // Delete the capital transaction for this interest payment
@@ -365,18 +406,30 @@ class LoanController extends Controller
             }
         }
 
+        // Update status and payment date first
         $monthlyInterest->update([
             'status' => $validated['status'],
             'payment_date' => $validated['payment_date'] ?? ($validated['status'] === 'paid' ? now() : null),
         ]);
 
+        // Refresh the model to ensure we have the latest data from database
+        $monthlyInterest->refresh();
+
+        // Update interest_collected for the loan's year after status update
+        // This recalculates the TOTAL of ALL paid interest payments for loans in this year
+        // It sums all paid payments, not just adds/subtracts incrementally
+        if ($loanYear) {
+            CashFlow::recalculateInterestCollected($loanYear);
+        }
+
         // Reload loan with updated monthly interest payments
         $loan->refresh();
         $loan->load(['monthlyInterestPayments', 'advancePayments']);
-        $currentYear = date('Y');
+        // Use loan's year if set, otherwise use current year
+        $targetYear = $loan->year ?? date('Y');
 
         // Return Inertia response with updated data
-        $monthlyInterestPayments = $loan->monthlyInterestPayments()->where('year', $currentYear)->get()->toArray();
+        $monthlyInterestPayments = $loan->monthlyInterestPayments()->where('year', $targetYear)->get()->toArray();
 
         return back()->with([
             'success' => 'Monthly interest payment updated successfully.',
@@ -410,12 +463,9 @@ class LoanController extends Controller
         // Add advance payment to capital for the loan's year
         $loanYear = $loan->year;
         if ($loanYear) {
-            $capitalEntry = CapitalCashFlow::firstOrCreate(
-                ['year' => $loanYear],
-                ['capital' => 0]
-            );
-            $capitalEntry->capital += $validated['amount'];
-            $capitalEntry->save();
+            $cashFlow = CashFlow::getOrCreate($loanYear);
+            $cashFlow->capital += $validated['amount'];
+            $cashFlow->save();
 
             // Create capital transaction for advance payment
             $loan->load('member');
@@ -433,14 +483,15 @@ class LoanController extends Controller
         }
 
         // Recalculate monthly interest for remaining months
-        $currentYear = date('Y');
+        // Use loan's year if set, otherwise use current year
+        $targetYear = $loan->year ?? date('Y');
         $currentMonth = date('n');
         $remainingBalance = $loan->fresh()->remaining_balance;
 
         for ($month = $currentMonth; $month <= 12; $month++) {
             $monthlyInterest = MonthlyInterestPayment::where('loan_id', $loan->id)
                 ->where('month', $month)
-                ->where('year', $currentYear)
+                ->where('year', $targetYear)
                 ->first();
 
             if ($monthlyInterest && $monthlyInterest->status === 'pending') {
@@ -453,7 +504,7 @@ class LoanController extends Controller
         // Reload loan with updated data
         $loan->refresh();
         $loan->load(['monthlyInterestPayments', 'advancePayments']);
-        $monthlyInterestPayments = $loan->monthlyInterestPayments()->where('year', $currentYear)->get()->toArray();
+        $monthlyInterestPayments = $loan->monthlyInterestPayments()->where('year', $targetYear)->get()->toArray();
 
         // Return back with updated data - this prevents Inertia from trying to GET the advance-payment route
         return back()->with([
@@ -485,10 +536,10 @@ class LoanController extends Controller
 
         // Deduct advance payment from capital when reverted
         if ($loanYear) {
-            $capitalEntry = CapitalCashFlow::where('year', $loanYear)->first();
-            if ($capitalEntry) {
-                $capitalEntry->capital = max(0, $capitalEntry->capital - $amount);
-                $capitalEntry->save();
+            $cashFlow = CashFlow::where('year', $loanYear)->first();
+            if ($cashFlow) {
+                $cashFlow->capital = max(0, $cashFlow->capital - $amount);
+                $cashFlow->save();
             }
 
             // Delete the capital transaction for this advance payment
@@ -503,14 +554,15 @@ class LoanController extends Controller
         }
 
         // Recalculate monthly interest for remaining months
-        $currentYear = date('Y');
+        // Use loan's year if set, otherwise use current year
+        $targetYear = $loan->year ?? date('Y');
         $currentMonth = date('n');
         $remainingBalance = $loan->fresh()->remaining_balance;
 
         for ($month = $currentMonth; $month <= 12; $month++) {
             $monthlyInterest = MonthlyInterestPayment::where('loan_id', $loan->id)
                 ->where('month', $month)
-                ->where('year', $currentYear)
+                ->where('year', $targetYear)
                 ->first();
 
             if ($monthlyInterest && $monthlyInterest->status === 'pending') {
@@ -523,7 +575,7 @@ class LoanController extends Controller
         // Reload loan with updated data
         $loan->refresh();
         $loan->load(['monthlyInterestPayments', 'advancePayments']);
-        $monthlyInterestPayments = $loan->monthlyInterestPayments()->where('year', $currentYear)->get()->toArray();
+        $monthlyInterestPayments = $loan->monthlyInterestPayments()->where('year', $targetYear)->get()->toArray();
 
         return back()->with([
             'success' => 'Advance payment reverted successfully.',
@@ -559,46 +611,120 @@ class LoanController extends Controller
 
         // Handle year change and capital adjustments
         if ($oldYear && $oldYear != $newYear) {
-            // Restore capital to old year
-            $oldCapitalEntry = CapitalCashFlow::where('year', $oldYear)->first();
-            if ($oldCapitalEntry) {
-                $oldCapitalEntry->capital += $loanAmount;
-                $oldCapitalEntry->save();
+            // Get all related records from old year only
+            $oldYearPayments = MonthlyInterestPayment::where('loan_id', $loan->id)
+                ->where('year', $oldYear)
+                ->get();
+            $advancePayments = AdvancePayment::where('loan_id', $loan->id)->get();
+            $capitalTransactions = CapitalTransaction::where('loan_id', $loan->id)
+                ->where('year', $oldYear)
+                ->get();
+
+            // Calculate totals from old year records only
+            $totalInterestCollected = $oldYearPayments
+                ->where('status', 'paid')
+                ->sum('interest_amount');
+            $totalAdvancePayments = $advancePayments->sum('amount');
+
+            // Track payments that were deleted due to duplicates (to adjust capital correctly)
+            $deletedPaidInterestAmount = 0;
+
+            // Transfer MonthlyInterestPayment records to new year
+            // Handle potential duplicates by merging existing records
+            foreach ($oldYearPayments as $oldPayment) {
+                // Check if a record already exists for the new year with the same month
+                $existingPayment = MonthlyInterestPayment::where('loan_id', $loan->id)
+                    ->where('month', $oldPayment->month)
+                    ->where('year', $newYear)
+                    ->first();
+
+                if ($existingPayment) {
+                    // Merge: prefer keeping paid status and payment dates from existing if paid
+                    // Otherwise, use the transferred record's data
+                    if ($existingPayment->status === 'paid' && $oldPayment->status === 'paid') {
+                        // Both are paid - keep existing, delete old (don't double count in capital)
+                        $deletedPaidInterestAmount += $oldPayment->interest_amount;
+                        $oldPayment->delete();
+                    } elseif ($existingPayment->status === 'paid' && $oldPayment->status === 'pending') {
+                        // Existing is paid, old is pending - keep existing, delete old
+                        $oldPayment->delete();
+                    } else {
+                        // Existing is pending, merge with old payment data
+                        // Prefer paid status, payment dates, and notes from old payment if it has more info
+                        $existingPayment->update([
+                            'status' => $oldPayment->status === 'paid' ? 'paid' : $existingPayment->status,
+                            'interest_amount' => $oldPayment->interest_amount, // Use transferred amount
+                            'payment_date' => $oldPayment->payment_date ?? $existingPayment->payment_date,
+                            'notes' => $oldPayment->notes ?? $existingPayment->notes,
+                        ]);
+                        $oldPayment->delete();
+                    }
+                } else {
+                    // No conflict, just update the year
+                    $oldPayment->update(['year' => $newYear]);
+                }
             }
 
-            // Delete old capital transaction
+            // Adjust totalInterestCollected to exclude deleted duplicates
+            $totalInterestCollected -= $deletedPaidInterestAmount;
+
+            // Update CapitalTransaction records to new year
             CapitalTransaction::where('loan_id', $loan->id)
                 ->where('year', $oldYear)
-                ->delete();
+                ->update(['year' => $newYear]);
 
-            // Deduct capital from new year
-            $newCapitalEntry = CapitalCashFlow::firstOrCreate(
-                ['year' => $newYear],
-                ['capital' => 0]
-            );
-            $newCapitalEntry->capital = max(0, $newCapitalEntry->capital - $loanAmount);
-            $newCapitalEntry->save();
+            // IMPORTANT: Update loan's year BEFORE recalculating interest_collected
+            // so that the recalculation can find the transferred records
+            $loan->year = $newYear;
+            $loan->save();
+            
+            // Refresh the loan model to ensure relationships are updated
+            $loan->refresh();
 
-            // Create new capital transaction
-            $borrowerName = $loan->member_id 
-                ? ($loan->member ? $loan->member->first_name . ' ' . $loan->member->last_name : 'Unknown Member')
-                : ($loan->non_member_name ?? 'Unknown');
+            // Adjust capital for old year: restore loan amount, remove interest and advance payments
+            $oldCashFlow = CashFlow::where('year', $oldYear)->first();
+            if ($oldCashFlow) {
+                // Restore loan amount to capital
+                $oldCashFlow->capital += $loanAmount;
+                // Remove interest collected from capital (it was added when marked as paid)
+                $oldCashFlow->capital = max(0, $oldCashFlow->capital - $totalInterestCollected);
+                // Remove advance payments from capital (they were added when recorded)
+                $oldCashFlow->capital = max(0, $oldCashFlow->capital - $totalAdvancePayments);
+                $oldCashFlow->save();
+            }
 
-            CapitalTransaction::create([
-                'year' => $newYear,
-                'loan_id' => $loan->id,
-                'type' => 'deduction',
-                'amount' => $loanAmount,
-                'description' => 'Loan disbursement to ' . $borrowerName . ' (Year updated)',
-            ]);
+            // Recalculate money_released and interest_collected for old year
+            CashFlow::recalculateMoneyReleased($oldYear);
+            CashFlow::recalculateInterestCollected($oldYear);
+
+            // Adjust capital for new year: deduct loan amount, add interest and advance payments
+            $newCashFlow = CashFlow::getOrCreate($newYear);
+            // Deduct loan amount from capital
+            $newCashFlow->capital = max(0, $newCashFlow->capital - $loanAmount);
+            // Add interest collected to capital (if any was paid)
+            $newCashFlow->capital += $totalInterestCollected;
+            // Add advance payments to capital (if any were recorded)
+            $newCashFlow->capital += $totalAdvancePayments;
+            $newCashFlow->save();
+
+            // Recalculate money_released and interest_collected for new year
+            // This will now correctly find the transferred records since loan year is updated
+            CashFlow::recalculateMoneyReleased($newYear);
+            // Force recalculation by clearing any potential query cache
+            CashFlow::recalculateInterestCollected($newYear);
         } elseif (!$oldYear && $newYear) {
             // Loan didn't have a year before, now it does - deduct from capital
-            $capitalEntry = CapitalCashFlow::firstOrCreate(
-                ['year' => $newYear],
-                ['capital' => 0]
-            );
-            $capitalEntry->capital = max(0, $capitalEntry->capital - $loanAmount);
-            $capitalEntry->save();
+            // Update loan year first so recalculation can find any existing records
+            $loan->year = $newYear;
+            $loan->save();
+
+            $cashFlow = CashFlow::getOrCreate($newYear);
+            $cashFlow->capital = max(0, $cashFlow->capital - $loanAmount);
+            $cashFlow->save();
+
+            // Recalculate money_released and interest_collected for new year
+            CashFlow::recalculateMoneyReleased($newYear);
+            CashFlow::recalculateInterestCollected($newYear);
 
             // Create capital transaction
             $borrowerName = $loan->member_id 
@@ -614,16 +740,11 @@ class LoanController extends Controller
             ]);
         }
 
-        // Update loan
-        $updateData = [
+        // Update loan status
+        // Note: Year was already updated above if it changed, so we only update status here
+        $loan->update([
             'status' => $validated['status'],
-        ];
-
-        if (isset($validated['year'])) {
-            $updateData['year'] = $validated['year'];
-        }
-
-        $loan->update($updateData);
+        ]);
 
         return redirect()->route('loans.index')
             ->with('success', 'Loan updated successfully.');
@@ -640,11 +761,11 @@ class LoanController extends Controller
 
         // Restore capital if year exists
         if ($loanYear) {
-            $capitalEntry = CapitalCashFlow::where('year', $loanYear)->first();
-            if ($capitalEntry) {
+            $cashFlow = CashFlow::where('year', $loanYear)->first();
+            if ($cashFlow) {
                 // Add back the loan amount to capital
-                $capitalEntry->capital += $loanAmount;
-                $capitalEntry->save();
+                $cashFlow->capital += $loanAmount;
+                $cashFlow->save();
             }
 
             // Delete the associated capital transaction
@@ -655,6 +776,11 @@ class LoanController extends Controller
 
         // Delete the loan (this will cascade delete advance payments and monthly interest payments)
         $loan->delete();
+
+        // Recalculate money_released for the year after deletion
+        if ($loanYear) {
+            CashFlow::recalculateMoneyReleased($loanYear);
+        }
 
         return redirect()->route('loans.index')
             ->with('success', 'Loan deleted successfully and capital restored.');

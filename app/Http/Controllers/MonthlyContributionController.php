@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\CapitalCashFlow;
+use App\Models\CashFlow;
 use App\Models\CapitalTransaction;
 use App\Models\Member;
 use App\Models\MonthlyContribution;
@@ -157,12 +157,9 @@ class MonthlyContributionController extends Controller
         if ($oldStatus === 'pending' && $status === 'paid') {
             // Add contribution to capital when marked as paid
             // Use the contribution's year to ensure it's added to the correct year's capital
-            $capitalEntry = CapitalCashFlow::firstOrCreate(
-                ['year' => $contributionYear],
-                ['capital' => 0]
-            );
-            $capitalEntry->capital += $contributionAmount;
-            $capitalEntry->save();
+            $cashFlow = CashFlow::getOrCreate($contributionYear);
+            $cashFlow->capital += $contributionAmount;
+            $cashFlow->save();
 
             // Create capital transaction for contribution payment
             $memberName = $member->first_name . ' ' . $member->last_name;
@@ -178,10 +175,10 @@ class MonthlyContributionController extends Controller
         } elseif ($oldStatus === 'paid' && $status === 'pending') {
             // Deduct contribution from capital when marked as pending (revert)
             // Use the contribution's year
-            $capitalEntry = CapitalCashFlow::where('year', $contributionYear)->first();
-            if ($capitalEntry) {
-                $capitalEntry->capital = max(0, $capitalEntry->capital - $contributionAmount);
-                $capitalEntry->save();
+            $cashFlow = CashFlow::where('year', $contributionYear)->first();
+            if ($cashFlow) {
+                $cashFlow->capital = max(0, $cashFlow->capital - $contributionAmount);
+                $cashFlow->save();
             }
 
             // Delete the capital transaction for this contribution
@@ -202,6 +199,9 @@ class MonthlyContributionController extends Controller
         $contribution->payment_date = $status === 'paid' ? ($contribution->payment_date ?? now()) : null;
         $contribution->year = $contributionYear; // Ensure year is saved
         $contribution->save();
+
+        // Update monthly_contributions_collected for the year
+        CashFlow::recalculateContributionsCollected($contributionYear);
 
         return back()->with('success', 'Contribution status updated successfully.');
     }
