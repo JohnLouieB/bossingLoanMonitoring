@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\CashFlow;
 use App\Models\CapitalTransaction;
+use App\Models\CashFlow;
 use App\Models\Loan;
 use App\Models\MonthlyContribution;
 use App\Models\MonthlyInterestPayment;
@@ -19,7 +19,7 @@ class CapitalCashFlowController extends Controller
     public function index(Request $request): Response
     {
         $currentYear = $request->get('year', date('Y'));
-        
+
         // Get or create cash flow entry for the selected year
         $cashFlow = CashFlow::getOrCreate($currentYear);
 
@@ -35,9 +35,9 @@ class CapitalCashFlowController extends Controller
             ->where('description', 'like', '%Advance payment%')
             ->sum('amount');
 
-        // Calculate total money collected (interest + contributions + advance payments)
-        $totalMoneyCollected = $totalInterestCollected + $totalContributionsCollected + $totalAdvancePayments;
-        
+        // Calculate total money collected (interest + contributions only, excluding advance payments)
+        $totalMoneyCollected = $totalInterestCollected + $totalContributionsCollected;
+
         // Base capital = initial capital (manually set) + total money collected
         $baseCapital = $initialCapital + $totalMoneyCollected;
 
@@ -47,11 +47,12 @@ class CapitalCashFlowController extends Controller
             ->sum(function ($loan) {
                 // Calculate remaining balance: loan amount - total advance payments
                 $totalAdvancePayments = $loan->advancePayments()->sum('amount');
+
                 return max(0, $loan->amount - $totalAdvancePayments);
             });
 
-        // Calculate available capital: (interest + contributions + advance payments) - total loan balances
-        $availableCapital = max(0, ($totalInterestCollected + $totalContributionsCollected + $totalAdvancePayments) - $totalLoanBalances);
+        // Calculate available capital: (interest + contributions) - total loan balances (excluding advance payments)
+        $availableCapital = max(0, ($totalInterestCollected + $totalContributionsCollected) - $totalLoanBalances);
 
         // Get transactions for the selected year
         // Include loan disbursements (deductions) and advance payments (additions)
@@ -72,16 +73,16 @@ class CapitalCashFlowController extends Controller
             ->get()
             ->map(function ($payment) {
                 $loan = $payment->loan;
-                
+
                 // Skip if loan doesn't have a year set
-                if (!$loan->year) {
+                if (! $loan->year) {
                     return null;
                 }
-                
-                $borrowerName = $loan->member_id 
+
+                $borrowerName = $loan->member_id
                     ? ($loan->member ? $loan->member->first_name . ' ' . $loan->member->last_name : 'Unknown Member')
                     : ($loan->non_member_name ?? 'Unknown');
-                
+
                 return [
                     'id' => $payment->id,
                     'borrower_name' => $borrowerName,
@@ -106,10 +107,10 @@ class CapitalCashFlowController extends Controller
             ->get()
             ->map(function ($contribution) {
                 $member = $contribution->member;
-                $memberName = $member 
+                $memberName = $member
                     ? $member->first_name . ' ' . $member->last_name
                     : 'Unknown Member';
-                
+
                 return [
                     'id' => $contribution->id,
                     'member_name' => $memberName,
@@ -125,7 +126,7 @@ class CapitalCashFlowController extends Controller
         return Inertia::render('CapitalCashFlow/Index', [
             'initialCapital' => $initialCapital, // Initial/manual capital amount
             'baseCapital' => $baseCapital, // Base capital = initial + total money collected
-            'availableCapital' => $availableCapital, // Available capital = (interest + contributions + advance payments) - total loan balances
+            'availableCapital' => $availableCapital, // Available capital = (interest + contributions) - total loan balances (excluding advance payments)
             'totalLoanBalances' => $totalLoanBalances, // Sum of all remaining loan balances
             'totalInterestCollected' => $totalInterestCollected, // Total interest collected for this year
             'totalContributionsCollected' => $totalContributionsCollected, // Total contributions collected for this year

@@ -49,7 +49,7 @@ class CashFlow extends Model
     public static function recalculateMoneyReleased(int $year): void
     {
         $moneyReleased = Loan::where('year', $year)->sum('amount') ?? 0;
-        
+
         $cashFlow = static::getOrCreate($year);
         $cashFlow->money_released = $moneyReleased;
         $cashFlow->save();
@@ -71,10 +71,10 @@ class CashFlow extends Model
             ->sum('monthly_interest_payments.interest_amount') ?? 0;
 
         $cashFlow = static::getOrCreate($year);
-        
+
         // Get the base amount (manually set via command), default to 0 if not set
         $baseAmount = $cashFlow->interest_collected_base ?? 0;
-        
+
         // Total = base amount + paid payments
         $cashFlow->interest_collected = $baseAmount + $paidPaymentsTotal;
         $cashFlow->save();
@@ -106,30 +106,25 @@ class CashFlow extends Model
 
     /**
      * Calculate available capital for a year.
-     * Available capital = (interest + contributions + advance payments) - total loan balances
+     * Available capital = (interest + contributions) - total loan balances (excluding advance payments)
      */
     public static function calculateAvailableCapital(int $year): float
     {
         $cashFlow = static::getOrCreate($year);
-        
+
         $totalInterestCollected = $cashFlow->interest_collected;
         $totalContributionsCollected = $cashFlow->monthly_contributions_collected;
-        
-        // Calculate total advance payments from transactions
-        $totalAdvancePayments = \App\Models\CapitalTransaction::where('year', $year)
-            ->where('type', 'addition')
-            ->where('description', 'like', '%Advance payment%')
-            ->sum('amount') ?? 0;
-        
+
         // Calculate total remaining balance of all loans for this year
         $totalLoanBalances = \App\Models\Loan::where('year', $year)
             ->get()
             ->sum(function ($loan) {
                 $totalAdvancePayments = $loan->advancePayments()->sum('amount');
+
                 return max(0, $loan->amount - $totalAdvancePayments);
             });
-        
-        // Available capital = (interest + contributions + advance payments) - total loan balances
-        return max(0, ($totalInterestCollected + $totalContributionsCollected + $totalAdvancePayments) - $totalLoanBalances);
+
+        // Available capital = (interest + contributions) - total loan balances (excluding advance payments)
+        return max(0, ($totalInterestCollected + $totalContributionsCollected) - $totalLoanBalances);
     }
 }

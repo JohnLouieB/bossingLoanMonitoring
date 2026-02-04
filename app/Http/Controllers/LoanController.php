@@ -3,8 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\AdvancePayment;
-use App\Models\CashFlow;
 use App\Models\CapitalTransaction;
+use App\Models\CashFlow;
 use App\Models\Loan;
 use App\Models\Member;
 use App\Models\MonthlyInterestPayment;
@@ -123,7 +123,7 @@ class LoanController extends Controller
         if (isset($data['member_id']) && $data['member_id'] === '') {
             $data['member_id'] = null;
         }
-        
+
         $validated = validator($data, [
             'borrower_type' => 'required|in:member,non-member',
             'member_id' => 'required|exists:members,id', // Required for both member and non-member (as co-maker)
@@ -169,7 +169,7 @@ class LoanController extends Controller
         $year = $validated['year'];
         $loanAmount = $validated['amount'];
         $availableCapital = CashFlow::calculateAvailableCapital($year);
-        
+
         if ($loanAmount > $availableCapital) {
             return back()
                 ->withErrors([
@@ -200,16 +200,17 @@ class LoanController extends Controller
                 'trace' => $e->getTraceAsString(),
                 'data' => $loanData ?? null,
             ]);
-            
+
             return back()->withErrors([
-                'error' => 'Failed to create loan: ' . $e->getMessage()
+                'error' => 'Failed to create loan: ' . $e->getMessage(),
             ])->withInput();
         }
 
         // Record the transaction
-        $borrowerName = $validated['borrower_type'] === 'member' 
-            ? (function() use ($validated) {
+        $borrowerName = $validated['borrower_type'] === 'member'
+            ? (function () use ($validated) {
                 $member = Member::find($validated['member_id']);
+
                 return $member ? $member->first_name . ' ' . $member->last_name : 'Unknown Member';
             })()
             : $validated['non_member_name'];
@@ -372,7 +373,7 @@ class LoanController extends Controller
 
                 // Create capital transaction for interest payment
                 $loan->load('member');
-                $borrowerName = $loan->member_id 
+                $borrowerName = $loan->member_id
                     ? ($loan->member ? $loan->member->first_name . ' ' . $loan->member->last_name : 'Unknown Member')
                     : ($loan->non_member_name ?? 'Unknown');
 
@@ -460,16 +461,12 @@ class LoanController extends Controller
         $loan->balance = max(0, $loan->balance - $validated['amount']);
         $loan->save();
 
-        // Add advance payment to capital for the loan's year
+        // Record advance payment transaction (but don't add to capital)
         $loanYear = $loan->year;
         if ($loanYear) {
-            $cashFlow = CashFlow::getOrCreate($loanYear);
-            $cashFlow->capital += $validated['amount'];
-            $cashFlow->save();
-
-            // Create capital transaction for advance payment
+            // Create capital transaction for advance payment (for record-keeping only, not included in capital)
             $loan->load('member');
-            $borrowerName = $loan->member_id 
+            $borrowerName = $loan->member_id
                 ? ($loan->member ? $loan->member->first_name . ' ' . $loan->member->last_name : 'Unknown Member')
                 : ($loan->non_member_name ?? 'Unknown');
 
@@ -677,7 +674,7 @@ class LoanController extends Controller
             // so that the recalculation can find the transferred records
             $loan->year = $newYear;
             $loan->save();
-            
+
             // Refresh the loan model to ensure relationships are updated
             $loan->refresh();
 
@@ -712,7 +709,7 @@ class LoanController extends Controller
             CashFlow::recalculateMoneyReleased($newYear);
             // Force recalculation by clearing any potential query cache
             CashFlow::recalculateInterestCollected($newYear);
-        } elseif (!$oldYear && $newYear) {
+        } elseif (! $oldYear && $newYear) {
             // Loan didn't have a year before, now it does - deduct from capital
             // Update loan year first so recalculation can find any existing records
             $loan->year = $newYear;
@@ -727,7 +724,7 @@ class LoanController extends Controller
             CashFlow::recalculateInterestCollected($newYear);
 
             // Create capital transaction
-            $borrowerName = $loan->member_id 
+            $borrowerName = $loan->member_id
                 ? ($loan->member ? $loan->member->first_name . ' ' . $loan->member->last_name : 'Unknown Member')
                 : ($loan->non_member_name ?? 'Unknown');
 
