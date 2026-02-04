@@ -135,11 +135,15 @@ class LoanController extends Controller
             'year' => 'required|integer|min:2000|max:2100',
         ])->validate();
 
+        // Set default interest rate based on borrower type if not provided
+        $defaultInterestRate = $validated['borrower_type'] === 'member' ? 3 : 5;
+        $interestRate = $validated['interest_rate'] ?? $defaultInterestRate;
+
         // Prepare loan data
         $loanData = [
             'amount' => $validated['amount'],
             'balance' => $validated['amount'], // Initially balance equals amount
-            'interest_rate' => $validated['interest_rate'] ?? 0,
+            'interest_rate' => $interestRate,
             'status' => $validated['status'] ?? 'pending',
             'description' => $validated['description'] ?? null,
             'year' => $validated['year'],
@@ -346,6 +350,13 @@ class LoanController extends Controller
      */
     public function updateMonthlyInterest(Request $request, Loan $loan)
     {
+        // Prevent updating monthly interest if loan status is pending
+        if ($loan->status === 'pending') {
+            return back()->withErrors([
+                'status' => 'Cannot update monthly interest payments for loans with pending status.',
+            ]);
+        }
+
         $validated = $request->validate([
             'month' => 'required|integer|between:1,12',
             'year' => 'required|integer',

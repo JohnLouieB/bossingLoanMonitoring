@@ -96,7 +96,7 @@ const loanForm = useForm({
     member_id: null,
     non_member_name: '',
     amount: '',
-    interest_rate: '',
+    interest_rate: 3, // Default to 3% for member
     status: 'pending',
     description: '',
     year: new Date().getFullYear(),
@@ -124,6 +124,15 @@ const yearOptions = Array.from({ length: 11 }, (_, i) => {
 const showMemberSelect = computed(() => {
     return loanForm.borrower_type === 'member';
 });
+
+// Watch borrower_type and auto-set interest_rate
+watch(() => loanForm.borrower_type, (newType) => {
+    if (newType === 'member') {
+        loanForm.interest_rate = 3;
+    } else if (newType === 'non-member') {
+        loanForm.interest_rate = 5;
+    }
+}, { immediate: true });
 
 // Search functionality
 const handleSearch = () => {
@@ -416,6 +425,12 @@ const monthlyInterestColumns = [
         key: 'actions',
         width: 200,
         customRender: ({ record }) => {
+            // If loan status is pending, show view-only (even for admins)
+            if (selectedLoan.value && selectedLoan.value.status === 'pending') {
+                return h(Tag, {
+                    color: record.status === 'paid' ? 'green' : 'orange'
+                }, () => record.status.toUpperCase());
+            }
             if (!isAdmin.value) {
                 return h(Tag, {
                     color: record.status === 'paid' ? 'green' : 'orange'
@@ -508,6 +523,7 @@ const showCreateLoanModal = () => {
     loanForm.borrower_type = 'member';
     loanForm.status = 'pending';
     loanForm.year = new Date().getFullYear();
+    loanForm.interest_rate = 3; // Set initial interest rate for member
     isCreateLoanModalVisible.value = true;
 };
 
@@ -786,7 +802,12 @@ const columns = [
                     <a-select
                         v-model:value="loanForm.borrower_type"
                         placeholder="Select borrower type"
-                        @change="() => { loanForm.member_id = null; loanForm.non_member_name = ''; }"
+                        @change="() => { 
+                            loanForm.member_id = null; 
+                            loanForm.non_member_name = ''; 
+                            // Auto-set interest rate based on borrower type
+                            loanForm.interest_rate = loanForm.borrower_type === 'member' ? 3 : 5;
+                        }"
                     >
                         <a-select-option value="member">Member</a-select-option>
                         <a-select-option value="non-member">Non-Member</a-select-option>
@@ -838,11 +859,11 @@ const columns = [
                 <a-form-item
                     label="Interest Rate (%)"
                     :validate-status="loanForm.errors.interest_rate ? 'error' : ''"
-                    :help="loanForm.errors.interest_rate"
+                    :help="loanForm.errors.interest_rate || (loanForm.borrower_type === 'member' ? 'Automatically set to 3% for members' : 'Automatically set to 5% for non-members')"
                 >
                     <a-input-number
                         v-model:value="loanForm.interest_rate"
-                        placeholder="Enter interest rate"
+                        :placeholder="loanForm.borrower_type === 'member' ? '3' : '5'"
                         :min="0"
                         :max="100"
                         :precision="2"
@@ -921,8 +942,11 @@ const columns = [
             </template>
             <div v-if="selectedLoan && selectedMemberForLoans" style="padding: 16px 0;">
                 <a-descriptions :column="1" bordered>
-                    <a-descriptions-item label="Member Name">
+                    <a-descriptions-item :label="selectedMemberForLoans.loans[0].non_member_name ? 'Co-Maker Name' : 'Member Name'">
                         {{ selectedMemberForLoans.first_name }} {{ selectedMemberForLoans.last_name }}
+                    </a-descriptions-item>
+                    <a-descriptions-item label="Non-Member Name">
+                        {{ selectedMemberForLoans.loans[0].non_member_name }}
                     </a-descriptions-item>
                     <a-descriptions-item label="Member Email">
                         {{ selectedMemberForLoans.email }}
