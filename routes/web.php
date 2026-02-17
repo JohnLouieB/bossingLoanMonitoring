@@ -59,6 +59,7 @@ Route::middleware('auth')->group(function () {
     Route::middleware('admin')->group(function () {
         Route::patch('/capital-cash-flow', [CapitalCashFlowController::class, 'update'])->name('capital-cash-flow.update');
         Route::post('/capital-cash-flow/deductions', [CapitalCashFlowController::class, 'storeDeduction'])->name('capital-cash-flow.deductions.store');
+        Route::delete('/capital-cash-flow/deductions/{capital_deduction}', [CapitalCashFlowController::class, 'destroyDeduction'])->name('capital-cash-flow.deductions.destroy');
     });
 });
 

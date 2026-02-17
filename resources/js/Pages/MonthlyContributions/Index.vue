@@ -70,6 +70,9 @@ const statusForm = useForm({
 // Month abbreviations
 const monthAbbreviations = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
+// Minimum table width so all columns (Member Name + Amount + 12 months) are scrollable
+const tableScrollWidth = 200 + 150 + monthAbbreviations.length * 80;
+
 // Format currency
 const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-PH', {
@@ -268,13 +271,16 @@ const columns = computed(() => {
                             </div>
                         </div>
 
-                        <!-- Members Table (horizontal scroll on small screens) -->
-                        <div class="overflow-x-auto -mx-2 sm:mx-0">
+                        <!-- Members Table: scroll horizontally to see all months (Jan–Dec) -->
+                        <p class="text-xs text-slate-500 mb-2 sm:hidden">
+                            Scroll table horizontally → to see all months (Jan–Dec).
+                        </p>
+                        <div class="overflow-x-auto -mx-2 sm:mx-0 overflow-y-visible">
                         <a-table
                             :columns="columns"
                             :data-source="members"
                             :pagination="false"
-                            :scroll="{ x: 1200 }"
+                            :scroll="{ x: tableScrollWidth }"
                         />
                         </div>
                     </div>

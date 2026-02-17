@@ -3,7 +3,8 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, router, usePage } from '@inertiajs/vue3';
 import { ref, watch, computed, h } from 'vue';
 import { Select, Table, Tag, Input, Button } from 'ant-design-vue';
-import { SearchOutlined } from '@ant-design/icons-vue';
+import { SearchOutlined, UndoOutlined } from '@ant-design/icons-vue';
+import { message } from 'ant-design-vue';
 
 const props = defineProps({
     initialCapital: {
@@ -153,13 +154,34 @@ const deductButtonLabel = computed(() => {
     return `Deduct 15 for ${monthAbbrev}`;
 });
 
+// Current calendar month (1-12) - deductions are stored per year+month
+const currentCalendarMonth = computed(() => new Date().getMonth() + 1);
+
+// Disable deduct button if this month's deduction already exists for the selected year (avoids duplication until next month)
+const deductionAlreadyDoneForCurrentMonth = computed(() => {
+    return (props.deductions || []).some((d) => d.month === currentCalendarMonth.value);
+});
+
 // Submit deduction (admin only)
 const deducting = ref(false);
 const submitDeduction = () => {
+    if (deductionAlreadyDoneForCurrentMonth.value) return;
     deducting.value = true;
     router.post(route('capital-cash-flow.deductions.store'), { year: selectedYear.value }, {
         preserveScroll: true,
         onFinish: () => { deducting.value = false; },
+    });
+};
+
+// Undo a deduction (admin only) – removes it so the deduct button can be used again for that month
+const undoingId = ref(null);
+const undoDeduction = (d) => {
+    if (undoingId.value !== null) return;
+    undoingId.value = d.id;
+    router.delete(route('capital-cash-flow.deductions.destroy', d.id), {
+        preserveScroll: true,
+        onSuccess: () => message.success('Deduction undone. You can deduct again for that month.'),
+        onFinish: () => { undoingId.value = null; },
     });
 };
 
@@ -428,6 +450,8 @@ const contributionColumns = [
                                 v-if="isAdmin"
                                 type="primary"
                                 :loading="deducting"
+                                :disabled="deductionAlreadyDoneForCurrentMonth"
+                                :title="deductionAlreadyDoneForCurrentMonth ? 'Deduction for this month already recorded. Available again next month.' : ''"
                                 @click="submitDeduction"
                             >
                                 {{ deductButtonLabel }}
@@ -441,9 +465,21 @@ const contributionColumns = [
                                 <li
                                     v-for="d in deductions"
                                     :key="d.id"
-                                    class="rounded-md border border-slate-100 bg-slate-50/50 px-3 py-2"
+                                    class="rounded-md border border-slate-100 bg-slate-50/50 px-3 py-2 flex flex-wrap items-center justify-between gap-2"
                                 >
-                                    {{ d.description }}
+                                    <span class="min-w-0 flex-1">{{ d.description }}</span>
+                                    <Button
+                                        v-if="isAdmin"
+                                        type="link"
+                                        size="small"
+                                        danger
+                                        :loading="undoingId === d.id"
+                                        :disabled="undoingId !== null"
+                                        @click="undoDeduction(d)"
+                                    >
+                                        <UndoOutlined />
+                                        Undo
+                                    </Button>
                                 </li>
                             </ul>
                             <p

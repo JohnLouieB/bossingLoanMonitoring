@@ -137,6 +137,14 @@ class CapitalCashFlowController extends Controller
         $year = (int) ($request->input('year') ?? date('Y'));
         $month = (int) date('n');
         $amount = 15;
+
+        // Prevent duplicate deduction for the same year+month
+        $exists = CapitalDeduction::where('year', $year)->where('month', $month)->exists();
+        if ($exists) {
+            return redirect()->route('capital-cash-flow.index', ['year' => $year])
+                ->with('error', 'A deduction for this month has already been recorded. You can deduct again next month.');
+        }
+
         $monthName = date('F', mktime(0, 0, 0, $month, 1)); // e.g. February
         $description = 'An admin has deducted a ' . $amount . ' pesos for fee of the month of ' . $monthName;
 
@@ -150,6 +158,18 @@ class CapitalCashFlowController extends Controller
 
         return redirect()->route('capital-cash-flow.index', ['year' => $year])
             ->with('success', 'Deduction recorded.');
+    }
+
+    /**
+     * Undo (delete) a capital deduction. Re-enables the deduct button for that month.
+     */
+    public function destroyDeduction(CapitalDeduction $capitalDeduction)
+    {
+        $year = $capitalDeduction->year;
+        $capitalDeduction->delete();
+
+        return redirect()->route('capital-cash-flow.index', ['year' => $year])
+            ->with('success', 'Deduction undone.');
     }
 
     /**
