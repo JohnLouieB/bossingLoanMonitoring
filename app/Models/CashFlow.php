@@ -106,7 +106,8 @@ class CashFlow extends Model
 
     /**
      * Calculate available capital for a year.
-     * Available capital = (interest + contributions) - total loan balances (excluding advance payments)
+     * Available capital = (interest + contributions) - total loan balances - total deductions.
+     * Must match Capital Cash Flow page and Dashboard "Available Balance by Year".
      */
     public static function calculateAvailableCapital(int $year): float
     {
@@ -124,7 +125,9 @@ class CashFlow extends Model
                 return max(0, $loan->amount - $totalAdvancePayments);
             });
 
-        // Available capital = (interest + contributions) - total loan balances (excluding advance payments)
-        return max(0, ($totalInterestCollected + $totalContributionsCollected) - $totalLoanBalances);
+        $totalDeductions = \App\Models\CapitalDeduction::where('year', $year)->sum('amount');
+
+        // Available capital = (interest + contributions) - total loan balances - total deductions
+        return max(0, ($totalInterestCollected + $totalContributionsCollected) - $totalLoanBalances - $totalDeductions);
     }
 }
