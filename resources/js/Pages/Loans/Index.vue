@@ -708,17 +708,17 @@ const columns = [
             </h2>
         </template>
 
-        <div class="py-12">
-            <div class="mx-auto max-w-7xl sm:px-6 lg:px-8">
+        <div class="py-4 sm:py-8 lg:py-12">
+            <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
                 <div class="overflow-hidden bg-white shadow-sm sm:rounded-lg">
-                    <div class="p-6">
+                    <div class="p-4 sm:p-6">
                         <!-- Search, Filter and Create Button -->
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 16px; gap: 16px; align-items: center;">
-                            <div style="display: flex; gap: 12px; align-items: center; flex: 1;">
+                        <div class="flex flex-col gap-4 mb-4 sm:flex-row sm:justify-between sm:items-center sm:flex-wrap">
+                            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-3 sm:flex-1 sm:min-w-0">
                                 <a-input
                                     v-model:value="searchInput"
                                     placeholder="Search by member name or email..."
-                                    style="max-width: 400px;"
+                                    class="w-full sm:max-w-[280px]"
                                     allow-clear
                                     @pressEnter="handleSearch"
                                 >
@@ -728,7 +728,7 @@ const columns = [
                                 </a-input>
                                 <a-select
                                     v-model:value="balanceFilter"
-                                    style="width: 200px;"
+                                    class="w-full sm:w-[200px] shrink-0"
                                     @change="handleBalanceFilterChange"
                                 >
                                     <a-select-option value="all">All Loans</a-select-option>
@@ -736,13 +736,15 @@ const columns = [
                                     <a-select-option value="paid">Paid (Zero Balance)</a-select-option>
                                 </a-select>
                             </div>
-                            <a-button v-if="isAdmin" type="primary" @click="showCreateLoanModal">
+                            <a-button v-if="isAdmin" type="primary" @click="showCreateLoanModal" class="w-full sm:w-auto shrink-0">
                                 Create Loan
                             </a-button>
                         </div>
 
-                        <!-- Members with Loans Table -->
+                        <!-- Members with Loans Table (horizontal scroll on small screens) -->
+                        <div class="overflow-x-auto -mx-2 sm:mx-0">
                         <a-table
+                            :scroll="{ x: 'max-content' }"
                             :columns="columns"
                             :data-source="members.data"
                             :pagination="{
@@ -779,6 +781,7 @@ const columns = [
                                 });
                             }"
                         />
+                        </div>
                     </div>
                 </div>
             </div>

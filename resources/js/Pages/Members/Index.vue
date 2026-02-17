@@ -201,34 +201,37 @@ const columns = [
             </h2>
         </template>
 
-        <div class="py-12">
-            <div class="mx-auto max-w-7xl sm:px-6 lg:px-8">
+        <div class="py-4 sm:py-8 lg:py-12">
+            <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
                 <div class="overflow-hidden bg-white shadow-sm sm:rounded-lg">
-                    <div class="p-6">
+                    <div class="p-4 sm:p-6">
                         <!-- Search and Add Button -->
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 16px; gap: 16px;">
+                        <div class="flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-center mb-4">
                             <a-input
                                 v-model:value="searchInput"
                                 placeholder="Search by name or email..."
-                                style="max-width: 400px;"
+                                class="w-full sm:max-w-[400px]"
                                 allow-clear
                             >
                                 <template #prefix>
                                     <SearchOutlined />
                                 </template>
                             </a-input>
-                            <a-button v-if="isAdmin" type="primary" @click="showAddModal">
+                            <a-button v-if="isAdmin" type="primary" @click="showAddModal" class="w-full sm:w-auto shrink-0">
                                 Add Member
                             </a-button>
                         </div>
 
-                        <!-- Members Table -->
+                        <!-- Members Table (horizontal scroll on small screens) -->
+                        <div class="overflow-x-auto -mx-2 sm:mx-0">
                         <a-table
                             :columns="columns"
                             :data-source="members"
                             :pagination="false"
                             :loading="false"
+                            :scroll="{ x: 'max-content' }"
                         />
+                        </div>
                     </div>
                 </div>
             </div>

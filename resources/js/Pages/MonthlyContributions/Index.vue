@@ -231,54 +231,52 @@ const columns = computed(() => {
             </h2>
         </template>
 
-        <div class="py-12">
-            <div class="mx-auto max-w-7xl sm:px-6 lg:px-8">
+        <div class="py-4 sm:py-8 lg:py-12">
+            <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
                 <div class="overflow-hidden bg-white shadow-sm sm:rounded-lg">
-                    <div class="p-6">
+                    <div class="p-4 sm:p-6">
                         <!-- Top Controls -->
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 16px; flex-wrap: wrap;">
+                        <div class="flex flex-col gap-4 mb-4 sm:flex-row sm:flex-wrap sm:justify-between sm:items-center">
                             <!-- Search Bar and Year Selector -->
-                            <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-3 flex-wrap">
                                 <Input
                                     v-model:value="searchInput"
                                     placeholder="Search by member name or email..."
-                                    style="max-width: 400px;"
+                                    class="w-full sm:max-w-[280px]"
                                     allow-clear
                                 >
                                     <template #prefix>
                                         <SearchOutlined />
                                     </template>
                                 </Input>
-                                
-                                <!-- Year Selector -->
-                                <div style="display: flex; align-items: center; gap: 8px;">
-                                    <span style="font-weight: 500;">Year:</span>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-sm font-medium text-slate-600 shrink-0">Year:</span>
                                     <Select
                                         v-model:value="selectedYear"
                                         :options="yearOptions"
-                                        style="width: 120px;"
+                                        class="w-full min-w-[120px] sm:w-[120px]"
                                         @change="handleYearChange"
                                     />
                                 </div>
                             </div>
-                            
-                            <!-- Edit Amount Button -->
-                            <div style="display: flex; align-items: center; gap: 8px;">
-                                <span style="font-weight: 500;">Contribution Amount:</span>
-                                <span style="font-weight: bold; color: #1890ff;">{{ formatCurrency(currentAmount) }}</span>
-                                <Button v-if="isAdmin" type="primary" size="small" @click="showEditAmountModal">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <span class="text-sm font-medium text-slate-600">Contribution Amount:</span>
+                                <span class="font-bold text-blue-600">{{ formatCurrency(currentAmount) }}</span>
+                                <Button v-if="isAdmin" type="primary" size="small" @click="showEditAmountModal" class="shrink-0">
                                     Edit Amount
                                 </Button>
                             </div>
                         </div>
 
-                        <!-- Members Table -->
+                        <!-- Members Table (horizontal scroll on small screens) -->
+                        <div class="overflow-x-auto -mx-2 sm:mx-0">
                         <a-table
                             :columns="columns"
                             :data-source="members"
                             :pagination="false"
                             :scroll="{ x: 1200 }"
                         />
+                        </div>
                     </div>
                 </div>
             </div>

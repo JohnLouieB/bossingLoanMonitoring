@@ -354,15 +354,15 @@ const contributionColumns = [
             </h2>
         </template>
 
-        <div class="space-y-8 pb-12">
-            <div class="mx-auto max-w-6xl sm:px-4 lg:px-6">
+        <div class="space-y-6 sm:space-y-8 pb-8 sm:pb-12 px-2 sm:px-0">
+            <div class="mx-auto max-w-6xl px-4 sm:px-4 lg:px-6">
                 <!-- Year Selector -->
-                <div class="mb-8 flex flex-wrap items-center gap-3">
+                <div class="mb-6 sm:mb-8 flex flex-wrap items-center gap-3">
                     <span class="text-sm font-medium text-slate-600">Select Year:</span>
                     <Select
                         v-model:value="selectedYear"
                         :options="yearOptions"
-                        style="width: 150px;"
+                        class="w-full min-w-0 sm:w-[150px]"
                         @change="handleYearChange"
                     />
                 </div>
@@ -465,17 +465,17 @@ const contributionColumns = [
                         </p>
                     </div>
                     <div class="p-6 space-y-4">
-                        <div class="flex flex-wrap items-center gap-4">
-                            <div class="flex items-center gap-2">
-                                <span class="text-sm font-medium text-slate-600">Show:</span>
+                        <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
+                            <div class="flex items-center gap-2 w-full sm:w-auto">
+                                <span class="text-sm font-medium text-slate-600 shrink-0">Show:</span>
                                 <Select
                                     :value="activityTabLocal"
                                     :options="activityTabOptions"
-                                    style="width: 260px;"
+                                    class="flex-1 min-w-0 sm:w-[260px]"
                                     @update:value="handleActivityTabChange"
                                 />
                             </div>
-                            <div class="flex-1 min-w-[200px] max-w-md">
+                            <div class="w-full sm:flex-1 sm:min-w-[200px] sm:max-w-md">
                                 <Input
                                     v-model:value="activitySearchInput"
                                     placeholder="Search by member or borrower name..."

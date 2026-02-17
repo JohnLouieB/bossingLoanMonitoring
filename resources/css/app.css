@@ -65,6 +65,16 @@
   body {
     @apply bg-background text-foreground;
   }
+  /* Mobile: prevent overflow and improve touch targets */
+  html {
+    overflow-x: hidden;
+  }
+  @media (max-width: 1023px) {
+    .ant-table-wrapper {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+  }
 }
 
 /* Green background for paid borrowers (remaining balance = 0) */

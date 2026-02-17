@@ -49,7 +49,7 @@ const maxInterest = computed(() =>
             </h2>
         </template>
 
-        <div class="space-y-8 pb-12 mx-5">
+        <div class="space-y-6 sm:space-y-8 pb-8 sm:pb-12 mx-2 sm:mx-5">
             <!-- Summary stat cards -->
             <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <div

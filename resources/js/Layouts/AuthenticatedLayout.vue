@@ -11,7 +11,14 @@ import { UserOutlined, DollarCircleOutlined, AuditOutlined, DashboardOutlined, H
 const showingNavigationDropdown = ref(false);
 const openKeys = ref([]);
 
+const closeMobileMenu = () => {
+    showingNavigationDropdown.value = false;
+};
+
 const page = usePage();
+watch(() => page.url, () => {
+    showingNavigationDropdown.value = false;
+});
 
 // Determine selected key based on current route
 const selectedKeys2 = computed(() => {
@@ -102,7 +109,7 @@ const handleMenuClick = ({ key }) => {
                         <div class="flex">
                            
                             <!-- Logo -->
-                            <div class="flex shrink-0 items-center">
+                            <div class="flex shrink-0 items-center truncate max-w-[160px] sm:max-w-[220px] lg:max-w-none text-sm sm:text-base font-semibold text-gray-800">
                                 BOSSING COOPERATIVE SOCIETY LTD.
                             </div>
 
@@ -119,7 +126,7 @@ const handleMenuClick = ({ key }) => {
                             </div> -->
                         </div>
 
-                        <div class="hidden sm:ms-6 sm:flex sm:items-center">
+                        <div class="hidden lg:ms-6 lg:flex lg:items-center">
                             <!-- Settings Dropdown -->
                             <div class="relative ms-3">
                                 <Dropdown align="right" width="48">
@@ -165,8 +172,8 @@ const handleMenuClick = ({ key }) => {
                             </div>
                         </div>
 
-                        <!-- Hamburger -->
-                        <div class="-me-2 flex items-center sm:hidden">
+                        <!-- Hamburger (visible when sidebar is hidden: below lg) -->
+                        <div class="-me-2 flex items-center lg:hidden">
                             <button
                                 @click="
                                     showingNavigationDropdown =
@@ -208,13 +215,13 @@ const handleMenuClick = ({ key }) => {
                     </div>
                 </div>
 
-                <!-- Responsive Navigation Menu -->
+                <!-- Responsive Navigation Menu (mobile: full nav + user) -->
                 <div
                     :class="{
                         block: showingNavigationDropdown,
                         hidden: !showingNavigationDropdown,
                     }"
-                    class="sm:hidden"
+                    class="lg:hidden"
                 >
                     <div class="space-y-1 pb-3 pt-2">
                         <ResponsiveNavLink
@@ -222,6 +229,30 @@ const handleMenuClick = ({ key }) => {
                             :active="route().current('dashboard')"
                         >
                             Dashboard
+                        </ResponsiveNavLink>
+                        <ResponsiveNavLink
+                            :href="route('members.index')"
+                            :active="route().current('members.*')"
+                        >
+                            Members
+                        </ResponsiveNavLink>
+                        <ResponsiveNavLink
+                            :href="route('monthly-contributions.index')"
+                            :active="route().current('monthly-contributions.*')"
+                        >
+                            Monthly Contributions
+                        </ResponsiveNavLink>
+                        <ResponsiveNavLink
+                            :href="route('loans.index')"
+                            :active="route().current('loans.*')"
+                        >
+                            Loans
+                        </ResponsiveNavLink>
+                        <ResponsiveNavLink
+                            :href="route('capital-cash-flow.index')"
+                            :active="route().current('capital-cash-flow.*')"
+                        >
+                            Capital and Cash Flow
                         </ResponsiveNavLink>
                     </div>
 
@@ -255,8 +286,8 @@ const handleMenuClick = ({ key }) => {
                     </div>
                 </div>
             </nav>
-        <a-layout-content style="padding: 0 50px; background: #fff">
-      <a-breadcrumb style="margin: 16px 0">
+        <a-layout-content class="px-4 sm:px-6 lg:px-12 bg-white">
+      <a-breadcrumb class="my-3 sm:my-4 text-xs sm:text-sm flex flex-wrap">
         <a-breadcrumb-item v-for="(item, index) in breadcrumbItems" :key="index">
           <Link v-if="item.href" :href="item.href" style="color: inherit;">
             <HomeOutlined v-if="index === 0" style="margin-right: 4px;" />
@@ -265,8 +296,9 @@ const handleMenuClick = ({ key }) => {
           <span v-else>{{ item.title }}</span>
         </a-breadcrumb-item>
       </a-breadcrumb>
-      <a-layout style="padding: 24px 0; background: #fff">
-        <a-layout-sider width="250" style="background: #fff">
+      <a-layout class="pt-4 sm:pt-6 pb-6 bg-white">
+        <div class="hidden lg:block shrink-0" style="width: 250px;">
+        <a-layout-sider :width="250" style="background: #fff; position: static;">
           <a-menu
             :selectedKeys="selectedKeys2"
             v-model:openKeys="openKeys"
@@ -326,6 +358,7 @@ const handleMenuClick = ({ key }) => {
             </a-menu-item>
           </a-menu>
         </a-layout-sider>
+        </div>
         
             <!-- Page Content -->
             <main class="min-h-screen w-full">
@@ -341,8 +374,8 @@ const handleMenuClick = ({ key }) => {
             </main>
       </a-layout>
     </a-layout-content>
-    <a-layout-footer style="text-align: center">
-      Ant Design ©2018 Created by Ant UED
+    <a-layout-footer class="text-center text-xs sm:text-sm py-4 hidden sm:block">
+      Bossing Loan Monitoring
     </a-layout-footer>
     </div>
 </template>
