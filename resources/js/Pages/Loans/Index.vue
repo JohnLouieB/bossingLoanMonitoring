@@ -1031,7 +1031,7 @@ const columns = [
         <a-modal
             v-model:open="isMonthlyInterestModalVisible"
             title="Monthly Interest Payments"
-            width="800px"
+            width="min(96vw, 960px)"
             :footer="null"
             @cancel="() => { isMonthlyInterestModalVisible = false; advancePaymentForm.reset(); advancePaymentForm.payment_date = new Date().toISOString().split('T')[0]; }"
         >
@@ -1126,13 +1126,15 @@ const columns = [
                 <div v-if="monthlyInterestData.length === 0" style="text-align: center; padding: 20px; color: #999;">
                     No monthly interest data available. Please wait while data loads...
                 </div>
-                <a-table
-                    v-else
-                    :columns="monthlyInterestColumns"
-                    :data-source="monthlyInterestData"
-                    :pagination="false"
-                    :loading="false"
-                />
+                <div v-else class="overflow-x-auto min-w-0 -mx-1">
+                    <a-table
+                        :columns="monthlyInterestColumns"
+                        :data-source="monthlyInterestData"
+                        :pagination="false"
+                        :loading="false"
+                        :scroll="{ x: 'max-content' }"
+                    />
+                </div>
             </div>
         </a-modal>
 
