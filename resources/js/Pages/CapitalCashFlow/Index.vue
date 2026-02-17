@@ -2,10 +2,8 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, router, usePage } from '@inertiajs/vue3';
 import { ref, watch, computed, h } from 'vue';
-import { Select, Card, message, Table, Tag, Collapse, Input } from 'ant-design-vue';
+import { Select, Table, Tag, Input, Button } from 'ant-design-vue';
 import { SearchOutlined } from '@ant-design/icons-vue';
-
-const CollapsePanel = Collapse.Panel;
 
 const props = defineProps({
     initialCapital: {
@@ -44,17 +42,29 @@ const props = defineProps({
         type: Object,
         default: () => ({}),
     },
-    transactions: {
+    activityTab: {
+        type: String,
+        default: 'transactions',
+    },
+    activitySearch: {
+        type: String,
+        default: '',
+    },
+    activityPage: {
+        type: Number,
+        default: 1,
+    },
+    activityData: {
+        type: Object,
+        default: () => ({ data: [], total: 0, current_page: 1, last_page: 1, per_page: 10 }),
+    },
+    deductions: {
         type: Array,
         default: () => [],
     },
-    interestPayments: {
-        type: Array,
-        default: () => [],
-    },
-    contributions: {
-        type: Array,
-        default: () => [],
+    totalDeductions: {
+        type: Number,
+        default: 0,
     },
 });
 
@@ -62,8 +72,9 @@ const page = usePage();
 const isAdmin = computed(() => page.props.auth?.user?.isAdmin ?? false);
 
 const selectedYear = ref(props.currentYear);
-const interestSearchInput = ref('');
-const contributionSearchInput = ref('');
+const activityTabLocal = ref(props.activityTab);
+const activitySearchInput = ref(props.activitySearch);
+let searchTimeout = null;
 
 // Generate year options (current year ± 5 years)
 const currentYear = new Date().getFullYear();
@@ -80,14 +91,75 @@ watch(() => props.currentYear, (newYear) => {
     selectedYear.value = newYear;
 }, { immediate: true });
 
+// Sync activity tab and search from server
+watch([() => props.activityTab, () => props.activitySearch], ([tab, search]) => {
+    activityTabLocal.value = tab ?? 'transactions';
+    activitySearchInput.value = search ?? '';
+}, { immediate: true });
+
+// Activity tab options
+const activityTabOptions = [
+    { value: 'transactions', label: 'Transactions' },
+    { value: 'interest', label: 'Interest Collected' },
+    { value: 'contributions', label: 'Monthly Contributions Collected' },
+];
+
+// Build activity query params (year + activity)
+const getActivityParams = (overrides = {}) => {
+    return {
+        year: selectedYear.value,
+        activity_tab: overrides.activity_tab ?? activityTabLocal.value,
+        activity_search: overrides.activity_search !== undefined ? overrides.activity_search : activitySearchInput.value,
+        activity_page: overrides.activity_page ?? 1,
+    };
+};
+
+// Reload activity (tab, search, or page change)
+const reloadActivity = (overrides = {}) => {
+    router.get(route('capital-cash-flow.index'), getActivityParams(overrides), {
+        preserveState: true,
+        preserveScroll: true,
+    });
+};
+
 // Handle year change
 const handleYearChange = (year) => {
     selectedYear.value = year;
-    router.get(route('capital-cash-flow.index'), { 
-        year: year,
-    }, {
-        preserveState: true,
+    reloadActivity({ activity_page: 1 });
+};
+
+// Handle activity tab change
+const handleActivityTabChange = (tab) => {
+    activityTabLocal.value = tab;
+    reloadActivity({ activity_tab: tab, activity_page: 1 });
+};
+
+// Handle activity search (debounced)
+const handleActivitySearch = () => {
+    if (searchTimeout) clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+        reloadActivity({ activity_search: activitySearchInput.value, activity_page: 1 });
+    }, 350);
+};
+
+// Handle activity page change
+const handleActivityPageChange = (page) => {
+    reloadActivity({ activity_page: page });
+};
+
+// Deduct button: label by current month (e.g. "Deduct 15 for feb")
+const deductButtonLabel = computed(() => {
+    const monthAbbrev = new Date().toLocaleString('en', { month: 'short' }).toLowerCase();
+    return `Deduct 15 for ${monthAbbrev}`;
+});
+
+// Submit deduction (admin only)
+const deducting = ref(false);
+const submitDeduction = () => {
+    deducting.value = true;
+    router.post(route('capital-cash-flow.deductions.store'), { year: selectedYear.value }, {
         preserveScroll: true,
+        onFinish: () => { deducting.value = false; },
     });
 };
 
@@ -172,54 +244,6 @@ const getMonthName = (month) => {
     ];
     return months[month - 1] || '';
 };
-
-// Filter interest payments by borrower name
-const filteredInterestPayments = computed(() => {
-    if (!props.interestPayments || props.interestPayments.length === 0) {
-        return [];
-    }
-    
-    if (!interestSearchInput.value.trim()) {
-        return props.interestPayments;
-    }
-    
-    const searchTerm = interestSearchInput.value.toLowerCase().trim();
-    return props.interestPayments.filter(payment => {
-        return payment.borrower_name.toLowerCase().includes(searchTerm);
-    });
-});
-
-// Use totalInterestCollected from props (which uses aggregate transaction if available)
-// This ensures consistency with the Transaction History
-const totalInterestCollected = computed(() => {
-    return props.totalInterestCollected || 0;
-});
-
-// Filter contributions by member name
-const filteredContributions = computed(() => {
-    if (!props.contributions || props.contributions.length === 0) {
-        return [];
-    }
-    
-    if (!contributionSearchInput.value.trim()) {
-        return props.contributions;
-    }
-    
-    const searchTerm = contributionSearchInput.value.toLowerCase().trim();
-    return props.contributions.filter(contribution => {
-        return contribution.member_name.toLowerCase().includes(searchTerm);
-    });
-});
-
-// Calculate total contributions collected (from filtered results)
-const totalContributionsCollected = computed(() => {
-    if (!filteredContributions.value || filteredContributions.value.length === 0) {
-        return 0;
-    }
-    return filteredContributions.value.reduce((total, contribution) => {
-        return total + parseFloat(contribution.amount || 0);
-    }, 0);
-});
 
 // Interest collected table columns
 const interestColumns = [
@@ -325,177 +349,176 @@ const contributionColumns = [
 
     <AuthenticatedLayout>
         <template #header>
-            <h2 class="text-xl font-semibold leading-tight text-gray-800">
+            <h2 class="text-xl font-semibold leading-tight text-slate-800">
                 Capital and Cash Flow
             </h2>
         </template>
 
-        <div class="py-12">
-            <div class="mx-auto max-w-7xl sm:px-6 lg:px-8">
-                <div class="overflow-hidden bg-white shadow-sm sm:rounded-lg">
-                    <div class="p-6">
-                        <!-- Year Selector -->
-                        <div style="margin-bottom: 24px;">
-                            <div style="display: flex; align-items: center; gap: 12px;">
-                                <span style="font-weight: 500;">Select Year:</span>
-                                <Select
-                                    v-model:value="selectedYear"
-                                    :options="yearOptions"
-                                    style="width: 150px;"
-                                    @change="handleYearChange"
-                                />
-                            </div>
-                        </div>
+        <div class="space-y-8 pb-12">
+            <div class="mx-auto max-w-6xl sm:px-4 lg:px-6">
+                <!-- Year Selector -->
+                <div class="mb-8 flex flex-wrap items-center gap-3">
+                    <span class="text-sm font-medium text-slate-600">Select Year:</span>
+                    <Select
+                        v-model:value="selectedYear"
+                        :options="yearOptions"
+                        style="width: 150px;"
+                        @change="handleYearChange"
+                    />
+                </div>
 
-                        <!-- Capital Card -->
-                        <Card title="Capital" style="max-width: 600px;">
-                            <div style="margin-bottom: 16px;">
-                                    <div style="padding: 12px; background-color: #f0f0f0; border-radius: 4px;">
-                                    <div style="margin-bottom: 8px;">
-                                        <span style="font-weight: 500;">Total Loan Balances ({{ selectedYear }}): </span>
-                                        <span style="font-weight: bold; color: #ff4d4f; font-size: 16px;">
-                                            {{ formatCurrency(totalLoanBalances) }}
-                                        </span>
-                                    </div>
-                                    <div style="margin-bottom: 8px; padding-top: 8px; border-top: 1px solid #d9d9d9;">
-                                        <span style="font-weight: 500;">Interest Collected ({{ selectedYear }}): </span>
-                                        <span style="font-weight: bold; color: #52c41a; font-size: 16px;">
-                                            {{ formatCurrency(totalInterestCollected) }}
-                                        </span>
-                                    </div>
-                                    <div style="margin-bottom: 8px; padding-top: 8px; border-top: 1px solid #d9d9d9;">
-                                        <span style="font-weight: 500;">Contributions Collected ({{ selectedYear }}): </span>
-                                        <span style="font-weight: bold; color: #52c41a; font-size: 16px;">
-                                            {{ formatCurrency(totalContributionsCollected) }}
-                                        </span>
-                                    </div>
-                                    <div style="margin-bottom: 8px; padding-top: 8px; border-top: 1px solid #d9d9d9;">
-                                        <span style="font-weight: 500;">Advance Payments ({{ selectedYear }}): </span>
-                                        <span style="font-weight: bold; color: #52c41a; font-size: 16px;">
-                                            {{ formatCurrency(totalAdvancePayments) }}
-                                        </span>
-                                    </div>
-                                    <div style="padding-top: 8px; border-top: 1px solid #d9d9d9; background-color: #f6ffed; padding: 12px; border-radius: 4px; margin-top: 8px;">
-                                        <span style="font-weight: 500;">Available Capital: </span>
-                                        <span style="font-weight: bold; color: #52c41a; font-size: 20px;">
+                <!-- Capital and Deductions cards side by side -->
+                <div class="mb-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
+                    <!-- Capital summary card -->
+                    <div class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                        <div class="border-b border-slate-200 bg-slate-50/80 px-6 py-4">
+                            <h3 class="text-base font-semibold text-slate-800">Capital</h3>
+                        </div>
+                        <div class="p-6">
+                            <div class="space-y-4 rounded-lg border border-slate-200 bg-slate-50/50 p-4">
+                                <div class="flex flex-wrap items-center justify-between gap-2">
+                                    <span class="text-sm font-medium text-slate-600">
+                                        Total Loan Balances ({{ selectedYear }}):
+                                    </span>
+                                    <span class="text-base font-bold text-rose-600">
+                                        {{ formatCurrency(totalLoanBalances) }}
+                                    </span>
+                                </div>
+                                <div class="border-t border-slate-200 pt-4 flex flex-wrap items-center justify-between gap-2">
+                                    <span class="text-sm font-medium text-slate-600">
+                                        Interest Collected ({{ selectedYear }}):
+                                    </span>
+                                    <span class="text-base font-bold text-emerald-600">
+                                        {{ formatCurrency(props.totalInterestCollected) }}
+                                    </span>
+                                </div>
+                                <div class="border-t border-slate-200 pt-4 flex flex-wrap items-center justify-between gap-2">
+                                    <span class="text-sm font-medium text-slate-600">
+                                        Contributions Collected ({{ selectedYear }}):
+                                    </span>
+                                    <span class="text-base font-bold text-emerald-600">
+                                        {{ formatCurrency(props.totalContributionsCollected) }}
+                                    </span>
+                                </div>
+                                <div class="border-t border-slate-200 pt-4 flex flex-wrap items-center justify-between gap-2">
+                                    <span class="text-sm font-medium text-slate-600">
+                                        Advance Payments ({{ selectedYear }}):
+                                    </span>
+                                    <span class="text-base font-bold text-emerald-600">
+                                        {{ formatCurrency(totalAdvancePayments) }}
+                                    </span>
+                                </div>
+                                <div class="mt-4 rounded-lg border border-emerald-200 bg-emerald-50/80 px-4 py-3">
+                                    <div class="flex flex-wrap items-center justify-between gap-2">
+                                        <span class="text-sm font-medium text-slate-700">Available Capital:</span>
+                                        <span class="text-xl font-bold text-emerald-700">
                                             {{ formatCurrency(availableCapital) }}
                                         </span>
                                     </div>
                                 </div>
                             </div>
-                        </Card>
+                        </div>
+                    </div>
 
-                        <!-- Transaction History Card -->
-                        <Card title="Transaction History" style="margin-top: 24px;">
-                            <p style="color: #666; margin-bottom: 12px; font-size: 14px;">
-                                Records of all capital transactions: loan disbursements (deductions) and advance payments (additions).
-                            </p>
-                            <div v-if="!transactions || transactions.length === 0" style="text-align: center; padding: 40px; color: #999;">
-                                No transactions recorded for {{ selectedYear }}.
-                            </div>
-                            <a-table
+                    <!-- Deductions card -->
+                    <div class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                        <div class="border-b border-slate-200 bg-slate-50/80 px-6 py-4 flex flex-wrap items-center justify-between gap-3">
+                            <h3 class="text-base font-semibold text-slate-800">Deductions</h3>
+                            <Button
+                                v-if="isAdmin"
+                                type="primary"
+                                :loading="deducting"
+                                @click="submitDeduction"
+                            >
+                                {{ deductButtonLabel }}
+                            </Button>
+                        </div>
+                        <div class="p-6">
+                            <ul
+                                v-if="deductions && deductions.length > 0"
+                                class="space-y-2 text-sm text-slate-700"
+                            >
+                                <li
+                                    v-for="d in deductions"
+                                    :key="d.id"
+                                    class="rounded-md border border-slate-100 bg-slate-50/50 px-3 py-2"
+                                >
+                                    {{ d.description }}
+                                </li>
+                            </ul>
+                            <p
                                 v-else
-                                :columns="transactionColumns"
-                                :data-source="transactions"
-                                :pagination="false"
+                                class="rounded-lg border border-dashed border-slate-200 bg-slate-50/50 py-8 text-center text-sm text-slate-500"
+                            >
+                                No deductions for {{ selectedYear }}.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Activity: Transactions / Interest Collected / Monthly Contributions (one table with filters) -->
+                <div class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                    <div class="border-b border-slate-200 bg-slate-50/80 px-6 py-4">
+                        <h3 class="text-base font-semibold text-slate-800">Activity</h3>
+                        <p class="mt-1 text-sm text-slate-500">
+                            Transaction history, interest collected, and monthly contributions in one place. Use the filter and search to find a specific member.
+                        </p>
+                    </div>
+                    <div class="p-6 space-y-4">
+                        <div class="flex flex-wrap items-center gap-4">
+                            <div class="flex items-center gap-2">
+                                <span class="text-sm font-medium text-slate-600">Show:</span>
+                                <Select
+                                    :value="activityTabLocal"
+                                    :options="activityTabOptions"
+                                    style="width: 260px;"
+                                    @update:value="handleActivityTabChange"
+                                />
+                            </div>
+                            <div class="flex-1 min-w-[200px] max-w-md">
+                                <Input
+                                    v-model:value="activitySearchInput"
+                                    placeholder="Search by member or borrower name..."
+                                    allow-clear
+                                    @input="handleActivitySearch"
+                                >
+                                    <template #prefix>
+                                        <SearchOutlined />
+                                    </template>
+                                </Input>
+                            </div>
+                        </div>
+                        <div
+                            v-if="!activityData.data || activityData.data.length === 0"
+                            class="rounded-lg border border-dashed border-slate-200 bg-slate-50/50 py-12 text-center text-sm text-slate-500"
+                        >
+                            <template v-if="activityTabLocal === 'transactions'">
+                                No transactions recorded for {{ selectedYear }}<template v-if="activitySearchInput"> matching "{{ activitySearchInput }}"</template>.
+                            </template>
+                            <template v-else-if="activityTabLocal === 'interest'">
+                                No interest payments collected for {{ selectedYear }}<template v-if="activitySearchInput"> matching "{{ activitySearchInput }}"</template>.
+                            </template>
+                            <template v-else>
+                                No contributions collected for {{ selectedYear }}<template v-if="activitySearchInput"> matching "{{ activitySearchInput }}"</template>.
+                            </template>
+                        </div>
+                        <div v-else class="overflow-hidden rounded-lg border border-slate-200">
+                            <a-table
+                                :columns="activityTabLocal === 'transactions' ? transactionColumns : (activityTabLocal === 'interest' ? interestColumns : contributionColumns)"
+                                :data-source="activityData.data"
+                                :pagination="{
+                                    total: activityData.total,
+                                    current: activityData.current_page,
+                                    pageSize: activityData.per_page,
+                                    showSizeChanger: false,
+                                    showTotal: (total) => `Total ${total} record(s)`,
+                                    onChange: handleActivityPageChange,
+                                }"
                                 :loading="false"
                                 row-key="id"
+                                :scroll="{ x: 'max-content' }"
                             />
-                        </Card>
-
-                        <!-- Interest Collected Card (Collapsible) -->
-                        <Card style="margin-top: 24px;">
-                            <Collapse :bordered="false">
-                                <CollapsePanel 
-                                    key="1" 
-                                    :header="`Interest Collected - Total: ${formatCurrency(totalInterestCollected)}`"
-                                >
-                                    <div style="margin-bottom: 16px; padding: 12px; background-color: #f0f9ff; border-radius: 4px; border-left: 4px solid #1890ff;">
-                                        <span style="font-weight: 500;">Total Interest Collected for {{ selectedYear }}: </span>
-                                        <span style="font-weight: bold; color: #52c41a; font-size: 18px;">
-                                            {{ formatCurrency(totalInterestCollected) }}
-                                        </span>
-                                    </div>
-                                    
-                                    <!-- Search Bar -->
-                                    <div style="margin-bottom: 16px;">
-                                        <Input
-                                            v-model:value="interestSearchInput"
-                                            placeholder="Search by borrower name..."
-                                            style="max-width: 400px;"
-                                            allow-clear
-                                        >
-                                            <template #prefix>
-                                                <SearchOutlined />
-                                            </template>
-                                        </Input>
-                                    </div>
-                                    
-                                    <div v-if="!props.interestPayments || props.interestPayments.length === 0" style="text-align: center; padding: 40px; color: #999;">
-                                        No interest payments collected for {{ selectedYear }}.
-                                    </div>
-                                    <div v-else-if="filteredInterestPayments.length === 0" style="text-align: center; padding: 40px; color: #999;">
-                                        No interest payments found matching "{{ interestSearchInput }}".
-                                    </div>
-                                    <a-table
-                                        v-else
-                                        :columns="interestColumns"
-                                        :data-source="filteredInterestPayments"
-                                        :pagination="false"
-                                        :loading="false"
-                                        row-key="id"
-                                        :scroll="{ y: 500, x: 'max-content' }"
-                                    />
-                                </CollapsePanel>
-                            </Collapse>
-                        </Card>
-
-                        <!-- Money Collected from Contributions Card (Collapsible) -->
-                        <Card style="margin-top: 24px;">
-                            <Collapse :bordered="false">
-                                <CollapsePanel 
-                                    key="2" 
-                                    :header="`Money Collected from Contributions - Total: ${formatCurrency(totalContributionsCollected)}`"
-                                >
-                                    <div style="margin-bottom: 16px; padding: 12px; background-color: #f0f9ff; border-radius: 4px; border-left: 4px solid #1890ff;">
-                                        <span style="font-weight: 500;">Total Contributions Collected for {{ selectedYear }}: </span>
-                                        <span style="font-weight: bold; color: #52c41a; font-size: 18px;">
-                                            {{ formatCurrency(totalContributionsCollected) }}
-                                        </span>
-                                    </div>
-                                    
-                                    <!-- Search Bar -->
-                                    <div style="margin-bottom: 16px;">
-                                        <Input
-                                            v-model:value="contributionSearchInput"
-                                            placeholder="Search by member name..."
-                                            style="max-width: 400px;"
-                                            allow-clear
-                                        >
-                                            <template #prefix>
-                                                <SearchOutlined />
-                                            </template>
-                                        </Input>
-                                    </div>
-                                    
-                                    <div v-if="!props.contributions || props.contributions.length === 0" style="text-align: center; padding: 40px; color: #999;">
-                                        No contributions collected for {{ selectedYear }}.
-                                    </div>
-                                    <div v-else-if="filteredContributions.length === 0" style="text-align: center; padding: 40px; color: #999;">
-                                        No contributions found matching "{{ contributionSearchInput }}".
-                                    </div>
-                                    <a-table
-                                        v-else
-                                        :columns="contributionColumns"
-                                        :data-source="filteredContributions"
-                                        :pagination="false"
-                                        :loading="false"
-                                        row-key="id"
-                                        :scroll="{ y: 500, x: 'max-content' }"
-                                    />
-                                </CollapsePanel>
-                            </Collapse>
-                        </Card>
+                        </div>
                     </div>
                 </div>
             </div>

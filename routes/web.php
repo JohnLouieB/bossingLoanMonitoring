@@ -58,6 +58,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/capital-cash-flow', [CapitalCashFlowController::class, 'index'])->name('capital-cash-flow.index');
     Route::middleware('admin')->group(function () {
         Route::patch('/capital-cash-flow', [CapitalCashFlowController::class, 'update'])->name('capital-cash-flow.update');
+        Route::post('/capital-cash-flow/deductions', [CapitalCashFlowController::class, 'storeDeduction'])->name('capital-cash-flow.deductions.store');
     });
 });
 

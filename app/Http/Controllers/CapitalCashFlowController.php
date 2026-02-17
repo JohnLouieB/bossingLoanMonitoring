@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\CapitalDeduction;
 use App\Models\CapitalTransaction;
 use App\Models\CashFlow;
 use App\Models\Loan;
@@ -51,92 +52,58 @@ class CapitalCashFlowController extends Controller
                 return max(0, $loan->amount - $totalAdvancePayments);
             });
 
-        // Calculate available capital: (interest + contributions) - total loan balances (excluding advance payments)
-        $availableCapital = max(0, ($totalInterestCollected + $totalContributionsCollected) - $totalLoanBalances);
+        // Calculate available capital: (interest + contributions) - total loan balances - total deductions
+        $totalDeductions = CapitalDeduction::where('year', $currentYear)->sum('amount');
+        $availableCapital = max(0, ($totalInterestCollected + $totalContributionsCollected) - $totalLoanBalances - $totalDeductions);
 
-        // Get transactions for the selected year
-        // Include loan disbursements (deductions) and advance payments (additions)
-        $transactions = CapitalTransaction::where('year', $currentYear)
-            ->with('loan')
+        // Deductions for the selected year (for the Deductions card list)
+        $deductions = CapitalDeduction::where('year', $currentYear)
+            ->with('user')
             ->orderBy('created_at', 'desc')
-            ->get();
-
-        // Get all paid interest payments where the loan's year matches the selected year
-        // Filter by loan's year, not the interest payment's year
-        $interestPayments = MonthlyInterestPayment::where('status', 'paid')
-            ->whereHas('loan', function ($query) use ($currentYear) {
-                $query->where('year', $currentYear);
-            })
-            ->with(['loan.member'])
-            ->orderBy('created_at', 'desc') // Sort by when it was marked as paid (latest first)
-            ->orderBy('payment_date', 'desc')
             ->get()
-            ->map(function ($payment) {
-                $loan = $payment->loan;
-
-                // Skip if loan doesn't have a year set
-                if (! $loan->year) {
-                    return null;
-                }
-
-                $borrowerName = $loan->member_id
-                    ? ($loan->member ? $loan->member->first_name . ' ' . $loan->member->last_name : 'Unknown Member')
-                    : ($loan->non_member_name ?? 'Unknown');
+            ->map(function ($d) {
+                $monthName = date('F', mktime(0, 0, 0, $d->month, 1));
+                $who = $d->user ? $d->user->name : 'An admin';
 
                 return [
-                    'id' => $payment->id,
-                    'borrower_name' => $borrowerName,
-                    'interest_amount' => $payment->interest_amount,
-                    'month' => $payment->month,
-                    'year' => $payment->year,
-                    'payment_date' => $payment->payment_date,
-                    'created_at' => $payment->created_at,
-                    'loan_id' => $loan->id,
-                    'loan_year' => $loan->year,
-                ];
-            })
-            ->filter() // Remove null entries (loans without year)
-            ->values(); // Re-index array
-
-        // Get all paid monthly contributions for the selected year
-        $contributions = MonthlyContribution::where('year', $currentYear)
-            ->where('status', 'paid')
-            ->with('member')
-            ->orderBy('created_at', 'desc') // Sort by when it was marked as paid (latest first)
-            ->orderBy('payment_date', 'desc')
-            ->get()
-            ->map(function ($contribution) {
-                $member = $contribution->member;
-                $memberName = $member
-                    ? $member->first_name . ' ' . $member->last_name
-                    : 'Unknown Member';
-
-                return [
-                    'id' => $contribution->id,
-                    'member_name' => $memberName,
-                    'amount' => $contribution->amount,
-                    'month' => $contribution->month,
-                    'year' => $contribution->year,
-                    'payment_date' => $contribution->payment_date,
-                    'created_at' => $contribution->created_at,
-                    'member_id' => $contribution->member_id,
+                    'id' => $d->id,
+                    'amount' => $d->amount,
+                    'month' => $d->month,
+                    'month_name' => $monthName,
+                    'description' => $d->description ?? "{$who} has deducted {$d->amount} pesos for fee of the month of {$monthName}.",
+                    'created_at' => $d->created_at,
                 ];
             });
 
+        // Activity table: single list with tab filter (transactions | interest | contributions), search, pagination
+        $activityTab = $request->get('activity_tab', 'transactions');
+        $activitySearch = (string) ($request->get('activity_search') ?? '');
+        $activityPage = max(1, (int) $request->get('activity_page', 1));
+        $perPage = 10;
+
+        $activityData = match ($activityTab) {
+            'interest' => $this->getInterestActivity($currentYear, $activitySearch, $activityPage, $perPage),
+            'contributions' => $this->getContributionsActivity($currentYear, $activitySearch, $activityPage, $perPage),
+            default => $this->getTransactionsActivity($currentYear, $activitySearch, $activityPage, $perPage),
+        };
+
         return Inertia::render('CapitalCashFlow/Index', [
-            'initialCapital' => $initialCapital, // Initial/manual capital amount
-            'baseCapital' => $baseCapital, // Base capital = initial + total money collected
-            'availableCapital' => $availableCapital, // Available capital = (interest + contributions) - total loan balances (excluding advance payments)
-            'totalLoanBalances' => $totalLoanBalances, // Sum of all remaining loan balances
-            'totalInterestCollected' => $totalInterestCollected, // Total interest collected for this year
-            'totalContributionsCollected' => $totalContributionsCollected, // Total contributions collected for this year
-            'totalAdvancePayments' => $totalAdvancePayments, // Total advance payments collected for this year
-            'moneyReleased' => $moneyReleased, // Total money released (loans) for this year
+            'initialCapital' => $initialCapital,
+            'baseCapital' => $baseCapital,
+            'availableCapital' => $availableCapital,
+            'totalLoanBalances' => $totalLoanBalances,
+            'totalInterestCollected' => $totalInterestCollected,
+            'totalContributionsCollected' => $totalContributionsCollected,
+            'totalAdvancePayments' => $totalAdvancePayments,
+            'totalDeductions' => (float) $totalDeductions,
+            'deductions' => $deductions,
+            'moneyReleased' => $moneyReleased,
             'currentYear' => (int) $currentYear,
             'filters' => $request->only(['year']),
-            'transactions' => $transactions,
-            'interestPayments' => $interestPayments,
-            'contributions' => $contributions,
+            'activityTab' => $activityTab,
+            'activitySearch' => $activitySearch,
+            'activityPage' => $activityPage,
+            'activityData' => $activityData,
         ]);
     }
 
@@ -156,5 +123,176 @@ class CapitalCashFlowController extends Controller
         $cashFlow->save();
 
         return back()->with('success', 'Capital updated successfully.');
+    }
+
+    /**
+     * Store a deduction (e.g. monthly fee) for the current or selected year. Deduction reduces Available Capital.
+     */
+    public function storeDeduction(Request $request)
+    {
+        $request->validate([
+            'year' => 'nullable|integer|min:2000|max:2100',
+        ]);
+
+        $year = (int) ($request->input('year') ?? date('Y'));
+        $month = (int) date('n');
+        $amount = 15;
+        $monthName = date('F', mktime(0, 0, 0, $month, 1)); // e.g. February
+        $description = 'An admin has deducted a ' . $amount . ' pesos for fee of the month of ' . $monthName;
+
+        CapitalDeduction::create([
+            'year' => $year,
+            'amount' => $amount,
+            'month' => $month,
+            'description' => $description,
+            'user_id' => $request->user()->id,
+        ]);
+
+        return redirect()->route('capital-cash-flow.index', ['year' => $year])
+            ->with('success', 'Deduction recorded.');
+    }
+
+    /**
+     * Paginated transactions (loan disbursements, advance/interest/contribution additions) with optional member search.
+     */
+    private function getTransactionsActivity(int $year, string $search, int $page, int $perPage): array
+    {
+        $query = CapitalTransaction::where('year', $year)
+            ->with('loan.member');
+
+        if ($search !== '') {
+            $term = '%' . trim($search) . '%';
+            $query->where(function ($q) use ($term) {
+                $q->where('description', 'like', $term)
+                    ->orWhereHas('loan', function ($loanQuery) use ($term) {
+                        $loanQuery->where('non_member_name', 'like', $term)
+                            ->orWhereHas('member', function ($memberQuery) use ($term) {
+                                $memberQuery->where('first_name', 'like', $term)
+                                    ->orWhere('last_name', 'like', $term)
+                                    ->orWhereRaw('CONCAT(first_name, " ", last_name) LIKE ?', [$term])
+                                    ->orWhereRaw('CONCAT(last_name, " ", first_name) LIKE ?', [$term]);
+                            });
+                    });
+            });
+        }
+
+        $paginator = $query->orderBy('created_at', 'desc')->paginate($perPage, ['*'], 'activity_page');
+
+        return [
+            'data' => $paginator->items(),
+            'total' => $paginator->total(),
+            'current_page' => $paginator->currentPage(),
+            'last_page' => $paginator->lastPage(),
+            'per_page' => $paginator->perPage(),
+        ];
+    }
+
+    /**
+     * Paginated interest collected with optional borrower search.
+     */
+    private function getInterestActivity(int $year, string $search, int $page, int $perPage): array
+    {
+        $query = MonthlyInterestPayment::where('status', 'paid')
+            ->whereHas('loan', function ($q) use ($year) {
+                $q->where('year', $year);
+            })
+            ->with(['loan.member']);
+
+        if ($search !== '') {
+            $term = '%' . trim($search) . '%';
+            $query->whereHas('loan', function ($loanQuery) use ($term) {
+                $loanQuery->where('non_member_name', 'like', $term)
+                    ->orWhereHas('member', function ($memberQuery) use ($term) {
+                        $memberQuery->where('first_name', 'like', $term)
+                            ->orWhere('last_name', 'like', $term)
+                            ->orWhereRaw('CONCAT(first_name, " ", last_name) LIKE ?', [$term])
+                            ->orWhereRaw('CONCAT(last_name, " ", first_name) LIKE ?', [$term]);
+                    });
+            });
+        }
+
+        $paginator = $query->orderBy('created_at', 'desc')
+            ->orderBy('payment_date', 'desc')
+            ->paginate($perPage, ['*'], 'activity_page');
+
+        $items = collect($paginator->items())->map(function ($payment) {
+            $loan = $payment->loan;
+            if (! $loan || ! $loan->year) {
+                return null;
+            }
+            $borrowerName = $loan->member_id
+                ? ($loan->member ? $loan->member->first_name . ' ' . $loan->member->last_name : 'Unknown Member')
+                : ($loan->non_member_name ?? 'Unknown');
+
+            return [
+                'id' => $payment->id,
+                'borrower_name' => $borrowerName,
+                'interest_amount' => $payment->interest_amount,
+                'month' => $payment->month,
+                'year' => $payment->year,
+                'payment_date' => $payment->payment_date,
+                'created_at' => $payment->created_at,
+                'loan_id' => $loan->id,
+                'loan_year' => $loan->year,
+            ];
+        })->filter()->values()->all();
+
+        return [
+            'data' => $items,
+            'total' => $paginator->total(),
+            'current_page' => $paginator->currentPage(),
+            'last_page' => $paginator->lastPage(),
+            'per_page' => $paginator->perPage(),
+        ];
+    }
+
+    /**
+     * Paginated monthly contributions collected with optional member search.
+     */
+    private function getContributionsActivity(int $year, string $search, int $page, int $perPage): array
+    {
+        $query = MonthlyContribution::where('year', $year)
+            ->where('status', 'paid')
+            ->with('member');
+
+        if ($search !== '') {
+            $term = '%' . trim($search) . '%';
+            $query->whereHas('member', function ($q) use ($term) {
+                $q->where('first_name', 'like', $term)
+                    ->orWhere('last_name', 'like', $term)
+                    ->orWhereRaw('CONCAT(first_name, " ", last_name) LIKE ?', [$term])
+                    ->orWhereRaw('CONCAT(last_name, " ", first_name) LIKE ?', [$term]);
+            });
+        }
+
+        $paginator = $query->orderBy('created_at', 'desc')
+            ->orderBy('payment_date', 'desc')
+            ->paginate($perPage, ['*'], 'activity_page');
+
+        $items = collect($paginator->items())->map(function ($contribution) {
+            $member = $contribution->member;
+            $memberName = $member
+                ? $member->first_name . ' ' . $member->last_name
+                : 'Unknown Member';
+
+            return [
+                'id' => $contribution->id,
+                'member_name' => $memberName,
+                'amount' => $contribution->amount,
+                'month' => $contribution->month,
+                'year' => $contribution->year,
+                'payment_date' => $contribution->payment_date,
+                'created_at' => $contribution->created_at,
+                'member_id' => $contribution->member_id,
+            ];
+        })->all();
+
+        return [
+            'data' => $items,
+            'total' => $paginator->total(),
+            'current_page' => $paginator->currentPage(),
+            'last_page' => $paginator->lastPage(),
+            'per_page' => $paginator->perPage(),
+        ];
     }
 }

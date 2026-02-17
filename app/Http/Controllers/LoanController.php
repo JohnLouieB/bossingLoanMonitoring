@@ -26,6 +26,11 @@ class LoanController extends Controller
                 $q->with('advancePayments')->orderBy('created_at', 'desc');
             }]);
 
+        // Filter by member (e.g. from dashboard "top loaners" link)
+        if ($request->filled('member_id')) {
+            $query->where('id', $request->member_id);
+        }
+
         // Search functionality
         if ($request->has('search') && $request->search) {
             $search = $request->search;
@@ -96,7 +101,7 @@ class LoanController extends Controller
         return Inertia::render('Loans/Index', [
             'members' => $members,
             'allMembers' => $allMembers,
-            'filters' => $request->only(['search', 'balance_filter']),
+            'filters' => $request->only(['search', 'balance_filter', 'member_id']),
             'monthlyInterestPayments' => [],
             'remainingBalance' => 0,
         ]);
