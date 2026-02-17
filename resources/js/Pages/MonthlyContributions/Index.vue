@@ -167,14 +167,13 @@ const handleStatusToggle = (member, month) => {
     });
 };
 
-// Table columns
+// Table columns (no fixed columns so horizontal scroll doesn't cover month columns)
 const columns = computed(() => {
     const baseColumns = [
         {
             title: 'Member Name',
             key: 'member_name',
             width: 200,
-            fixed: 'left',
             customRender: ({ record }) => {
                 return h('span', `${record.first_name} ${record.last_name}`);
             },
@@ -183,7 +182,6 @@ const columns = computed(() => {
             title: 'Amount',
             key: 'amount',
             width: 150,
-            fixed: 'left',
             customRender: ({ record }) => {
                 return formatCurrency(record.contribution_amount || 0);
             },
@@ -271,17 +269,17 @@ const columns = computed(() => {
                             </div>
                         </div>
 
-                        <!-- Members Table: scroll horizontally to see all months (Jan–Dec) -->
+                        <!-- Members Table: one horizontal scroll (table only, no wrapper scroll) -->
                         <p class="text-xs text-slate-500 mb-2 sm:hidden">
                             Scroll table horizontally → to see all months (Jan–Dec).
                         </p>
-                        <div class="overflow-x-auto -mx-2 sm:mx-0 overflow-y-visible">
-                        <a-table
-                            :columns="columns"
-                            :data-source="members"
-                            :pagination="false"
-                            :scroll="{ x: tableScrollWidth }"
-                        />
+                        <div class="monthly-contributions-table-wrapper -mx-2 sm:mx-0 min-w-0">
+                            <a-table
+                                :columns="columns"
+                                :data-source="members"
+                                :pagination="false"
+                                :scroll="{ x: tableScrollWidth }"
+                            />
                         </div>
                     </div>
                 </div>
@@ -319,3 +317,10 @@ const columns = computed(() => {
         </a-modal>
     </AuthenticatedLayout>
 </template>
+
+<style scoped>
+/* One horizontal scrollbar only: wrapper does not scroll, table scroll.x does */
+.monthly-contributions-table-wrapper {
+    overflow-x: visible;
+}
+</style>
