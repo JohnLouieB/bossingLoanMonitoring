@@ -14,6 +14,11 @@ class MonthlyReportMail extends Mailable implements ShouldQueue
     use Queueable, SerializesModels;
 
     /**
+     * Job timeout in seconds (Gmail SMTP can be slow from cloud servers).
+     */
+    public int $timeout = 120;
+
+    /**
      * Create a new message instance.
      *
      * @param  array<int, array{loan_amount: float, interest_this_month: float, remaining_balance: float, description: ?string}>  $memberLoans

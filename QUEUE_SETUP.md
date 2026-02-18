@@ -12,7 +12,7 @@ The "Send Report" feature queues emails in the background to avoid 504 Gateway T
 Add this cron entry to process queued emails every minute:
 
 ```bash
-* * * * * cd /path/to/your/app && php artisan queue:work --stop-when-empty --max-time=50 >> /dev/null 2>&1
+* * * * * cd /path/to/your/app && php artisan queue:work --stop-when-empty --max-time=50 --timeout=120 >> /dev/null 2>&1
 ```
 
 Replace `/path/to/your/app` with your actual app path (e.g. `/var/www/bossingloanmonitoring`).
