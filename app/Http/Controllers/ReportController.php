@@ -38,9 +38,7 @@ class ReportController extends Controller
             ->with(['loans.monthlyInterestPayments', 'loans.advancePayments', 'monthlyContributions'])
             ->get();
 
-        $sentCount = 0;
-        $failedCount = 0;
-        $firstError = null;
+        $queuedCount = 0;
 
         foreach ($members as $member) {
             // Member's loans with interest this month and remaining balance
@@ -70,38 +68,23 @@ class ReportController extends Controller
             $monthlyContributionStatus = $contribution && $contribution->status === 'paid' ? 'Paid' : 'Pending';
             $monthlyContributionAmount = (float) ($contribution?->amount ?? $member->monthlyContributions->first()?->amount ?? 300);
 
-            try {
-                Mail::to($member->email)->send(new MonthlyReportMail(
-                    memberName: trim($member->first_name . ' ' . $member->last_name),
-                    memberLoans: $memberLoans,
-                    monthlyContributionStatus: $monthlyContributionStatus,
-                    monthlyContributionAmount: $monthlyContributionAmount,
-                    totalAvailableMoneyAllYears: $totalAvailableMoneyAllYears,
-                    totalMoneyReleasedAllYears: $totalMoneyReleasedAllYears,
-                    reportMonth: $monthName,
-                    reportYear: $currentYear
-                ));
-                $sentCount++;
-            } catch (\Throwable $e) {
-                $failedCount++;
-                if ($firstError === null) {
-                    $firstError = $e->getMessage();
-                }
-                report($e);
-            }
+            Mail::to($member->email)->queue(new MonthlyReportMail(
+                memberName: trim($member->first_name . ' ' . $member->last_name),
+                memberLoans: $memberLoans,
+                monthlyContributionStatus: $monthlyContributionStatus,
+                monthlyContributionAmount: $monthlyContributionAmount,
+                totalAvailableMoneyAllYears: $totalAvailableMoneyAllYears,
+                totalMoneyReleasedAllYears: $totalMoneyReleasedAllYears,
+                reportMonth: $monthName,
+                reportYear: $currentYear
+            ));
+            $queuedCount++;
         }
 
-        $message = "Report sent to {$sentCount} member(s).";
-        if ($failedCount > 0) {
-            $message .= " Failed to send to {$failedCount} member(s).";
-            if ($firstError && str_contains($firstError, 'Username and Password not accepted')) {
-                $message .= " Gmail rejected the credentials — please verify your App Password in .env (use a fresh one from Google Account → Security → App passwords).";
-            } elseif ($firstError && strlen($firstError) < 120) {
-                $message .= " Error: " . $firstError;
-            }
-        }
         if ($members->isEmpty()) {
-            $message = 'No members with valid email addresses found. Report was not sent.';
+            $message = 'No members with valid email addresses found. Report was not queued.';
+        } else {
+            $message = "Report queued for {$queuedCount} member(s). Emails will be sent shortly.";
         }
 
         return redirect()->route('members.index')->with('status', $message);
