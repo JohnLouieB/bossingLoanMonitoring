@@ -7,6 +7,7 @@ import NavLink from '@/Components/NavLink.vue';
 import ResponsiveNavLink from '@/Components/ResponsiveNavLink.vue';
 import { Link, router, usePage } from '@inertiajs/vue3';
 import { UserOutlined, DollarCircleOutlined, AuditOutlined, DashboardOutlined, HomeOutlined, AccountBookOutlined } from '@ant-design/icons-vue';
+import Chatbot from '@/Components/Chatbot.vue';
 
 const showingNavigationDropdown = ref(false);
 const openKeys = ref([]);
@@ -377,5 +378,6 @@ const handleMenuClick = ({ key }) => {
     <a-layout-footer class="text-center text-xs sm:text-sm py-4 hidden sm:block">
       Bossing Loan Monitoring
     </a-layout-footer>
+    <Chatbot />
     </div>
 </template>

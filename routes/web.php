@@ -1,7 +1,9 @@
 <?php
 
 use App\Http\Controllers\CapitalCashFlowController;
+use App\Http\Controllers\ChatbotController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\ReportController;
 use App\Http\Controllers\LoanController;
 use App\Http\Controllers\MemberController;
 use App\Http\Controllers\MonthlyContributionController;
@@ -53,6 +55,12 @@ Route::middleware('auth')->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])
         ->middleware(['auth', 'verified'])
         ->name('dashboard');
+
+    Route::middleware('admin')->group(function () {
+        Route::post('/report/send', [ReportController::class, 'sendReport'])->name('report.send');
+    });
+
+    Route::post('/chatbot', [ChatbotController::class, 'reply'])->name('chatbot.reply');
 
     // Capital and Cash Flow routes - viewers can view, admins can manage
     Route::get('/capital-cash-flow', [CapitalCashFlowController::class, 'index'])->name('capital-cash-flow.index');

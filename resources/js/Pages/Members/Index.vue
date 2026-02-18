@@ -7,7 +7,8 @@ import {
     PlusOutlined, 
     EditOutlined, 
     DeleteOutlined, 
-    SearchOutlined 
+    SearchOutlined,
+    SendOutlined,
 } from '@ant-design/icons-vue';
 
 const props = defineProps({
@@ -23,6 +24,22 @@ const props = defineProps({
 
 const page = usePage();
 const isAdmin = computed(() => page.props.auth?.user?.isAdmin ?? false);
+const sendReportLoading = ref(false);
+
+// Show flash message when redirected back with status
+watch(() => page.props.flash?.status, (status) => {
+    if (status) {
+        message.info(status);
+    }
+}, { immediate: true });
+
+const sendReport = () => {
+    sendReportLoading.value = true;
+    router.post(route('report.send'), {}, {
+        preserveScroll: true,
+        onFinish: () => { sendReportLoading.value = false; },
+    });
+};
 
 const searchInput = ref(props.filters.search || '');
 const isAddModalVisible = ref(false);
@@ -94,7 +111,7 @@ const showEditModal = (member) => {
 };
 
 const handleEdit = () => {
-    editForm.put(route('members.update', selectedMember.value.id), {
+    editForm.patch(route('members.update', selectedMember.value.id), {
         preserveScroll: true,
         onSuccess: () => {
             isEditModalVisible.value = false;
@@ -205,7 +222,7 @@ const columns = [
             <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
                 <div class="overflow-hidden bg-white shadow-sm sm:rounded-lg">
                     <div class="p-4 sm:p-6">
-                        <!-- Search and Add Button -->
+                        <!-- Search and Actions -->
                         <div class="flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-center mb-4">
                             <a-input
                                 v-model:value="searchInput"
@@ -217,9 +234,18 @@ const columns = [
                                     <SearchOutlined />
                                 </template>
                             </a-input>
-                            <a-button v-if="isAdmin" type="primary" @click="showAddModal" class="w-full sm:w-auto shrink-0">
-                                Add Member
-                            </a-button>
+                            <div v-if="isAdmin" class="flex flex-wrap gap-2 w-full sm:w-auto shrink-0 justify-end">
+                                <a-button
+                                    type="primary"
+                                    :loading="sendReportLoading"
+                                    @click="sendReport"
+                                >
+                                    Send Report
+                                </a-button>
+                                <a-button type="primary" @click="showAddModal">
+                                    Add Member
+                                </a-button>
+                            </div>
                         </div>
 
                         <!-- Members Table (horizontal scroll on small screens) -->
