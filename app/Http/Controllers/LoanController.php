@@ -246,6 +246,10 @@ class LoanController extends Controller
         $currentYear = (int) date('Y');
         $yearsToEnsure = array_unique([$targetYear, $currentYear]);
 
+        // Interest starts the month after loan creation: loan made in Feb → first interest in March
+        // Apply creation month across all years (loan year may differ from creation year)
+        $createdMonth = $loan->created_at ? (int) $loan->created_at->format('n') : 1;
+
         // Initialize monthly interest payments for the loan's year and current year (for multi-year loans)
         foreach ($yearsToEnsure as $year) {
             for ($month = 1; $month <= 12; $month++) {
@@ -255,8 +259,9 @@ class LoanController extends Controller
                     ->first();
 
                 if (! $existingPayment) {
-                    // January is always 0 peso (payments start in February)
-                    $interestAmount = $month === 1 ? 0 : (($loan->remaining_balance * $loan->interest_rate) / 100);
+                    // Creation month and earlier have 0 interest (applies to all years)
+                    $isBeforeOrInCreationMonth = ($month <= $createdMonth);
+                    $interestAmount = $isBeforeOrInCreationMonth ? 0 : (($loan->remaining_balance * $loan->interest_rate) / 100);
 
                     MonthlyInterestPayment::create([
                         'loan_id' => $loan->id,
@@ -266,8 +271,8 @@ class LoanController extends Controller
                         'status' => 'pending',
                     ]);
                 } else {
-                    // Ensure January is always 0
-                    if ($month === 1 && $existingPayment->interest_amount != 0) {
+                    // Ensure months up to and including creation month stay at 0 (only pending records)
+                    if ($month <= $createdMonth && $existingPayment->interest_amount != 0 && $existingPayment->status === 'pending') {
                         $existingPayment->update(['interest_amount' => 0]);
                     }
                 }
@@ -521,10 +526,10 @@ class LoanController extends Controller
         }
 
         // Recalculate monthly interest for remaining months
-        // Use loan's year if set, otherwise use current year
         $targetYear = $loan->year ?? date('Y');
         $currentMonth = date('n');
         $remainingBalance = $loan->fresh()->remaining_balance;
+        $createdMonth = $loan->created_at ? (int) $loan->created_at->format('n') : 1;
 
         for ($month = $currentMonth; $month <= 12; $month++) {
             $monthlyInterest = MonthlyInterestPayment::where('loan_id', $loan->id)
@@ -533,8 +538,8 @@ class LoanController extends Controller
                 ->first();
 
             if ($monthlyInterest && $monthlyInterest->status === 'pending') {
-                // January is always 0 peso (payments start in February)
-                $interestAmount = $month === 1 ? 0 : (($remainingBalance * $loan->interest_rate) / 100);
+                $isBeforeOrInCreationMonth = ($month <= $createdMonth);
+                $interestAmount = $isBeforeOrInCreationMonth ? 0 : (($remainingBalance * $loan->interest_rate) / 100);
                 $monthlyInterest->update(['interest_amount' => $interestAmount]);
             }
         }
@@ -592,10 +597,10 @@ class LoanController extends Controller
         }
 
         // Recalculate monthly interest for remaining months
-        // Use loan's year if set, otherwise use current year
         $targetYear = $loan->year ?? date('Y');
         $currentMonth = date('n');
         $remainingBalance = $loan->fresh()->remaining_balance;
+        $createdMonth = $loan->created_at ? (int) $loan->created_at->format('n') : 1;
 
         for ($month = $currentMonth; $month <= 12; $month++) {
             $monthlyInterest = MonthlyInterestPayment::where('loan_id', $loan->id)
@@ -604,8 +609,8 @@ class LoanController extends Controller
                 ->first();
 
             if ($monthlyInterest && $monthlyInterest->status === 'pending') {
-                // January is always 0 peso (payments start in February)
-                $interestAmount = $month === 1 ? 0 : (($remainingBalance * $loan->interest_rate) / 100);
+                $isBeforeOrInCreationMonth = ($month <= $createdMonth);
+                $interestAmount = $isBeforeOrInCreationMonth ? 0 : (($remainingBalance * $loan->interest_rate) / 100);
                 $monthlyInterest->update(['interest_amount' => $interestAmount]);
             }
         }

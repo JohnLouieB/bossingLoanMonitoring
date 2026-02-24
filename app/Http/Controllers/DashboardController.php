@@ -92,9 +92,21 @@ class DashboardController extends Controller
                     ->where('status', 'paid');
             })
             ->get()
-            ->filter(function ($loan) {
+            ->filter(function ($loan) use ($currentMonth, $currentYear) {
                 $remainingBalance = max(0, $loan->amount - $loan->advancePayments->sum('amount'));
-                return $remainingBalance > 0;
+                if ($remainingBalance <= 0) {
+                    return false;
+                }
+                // Interest starts the month after loan creation: loan made in Feb → first interest in March
+                $createdAt = $loan->created_at;
+                if ($createdAt) {
+                    $createdMonth = (int) $createdAt->format('n');
+                    $createdYear = (int) $createdAt->format('Y');
+                    if ($createdYear === $currentYear && $createdMonth >= $currentMonth) {
+                        return false; // Loan created this month or later - no interest due yet
+                    }
+                }
+                return true;
             })
             ->map(function ($loan) use ($currentMonth, $currentYear) {
                 $isMemberBorrower = empty($loan->non_member_name);
