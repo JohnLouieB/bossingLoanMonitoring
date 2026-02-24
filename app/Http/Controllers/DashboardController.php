@@ -131,6 +131,7 @@ class DashboardController extends Controller
                     'interest_to_pay' => $interestToPay,
                 ];
             })
+            ->filter(fn ($item) => $item['interest_to_pay'] > 0) // Exclude loans with 0 interest for this month
             ->groupBy('borrower_type')
             ->map(fn ($items) => $items->values()->toArray())
             ->toArray();
