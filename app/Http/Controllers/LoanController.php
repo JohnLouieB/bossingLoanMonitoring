@@ -20,11 +20,23 @@ class LoanController extends Controller
      */
     public function index(Request $request): Response
     {
+        $borrowerTypeFilter = $request->get('borrower_type', 'member');
+
         // Get members who have at least one loan, with their loans and advance payments
-        $query = Member::whereHas('loans')
-            ->with(['loans' => function ($q) {
-                $q->with('advancePayments')->orderBy('created_at', 'desc');
-            }]);
+        $query = Member::whereHas('loans', function ($q) use ($borrowerTypeFilter) {
+            if ($borrowerTypeFilter === 'member') {
+                $q->whereNull('non_member_name');
+            } elseif ($borrowerTypeFilter === 'non-member') {
+                $q->whereNotNull('non_member_name');
+            }
+        })->with(['loans' => function ($q) use ($borrowerTypeFilter) {
+            $q->with('advancePayments')->orderBy('created_at', 'desc');
+            if ($borrowerTypeFilter === 'member') {
+                $q->whereNull('non_member_name');
+            } elseif ($borrowerTypeFilter === 'non-member') {
+                $q->whereNotNull('non_member_name');
+            }
+        }]);
 
         // Filter by member (e.g. from dashboard "top loaners" link)
         if ($request->filled('member_id')) {
@@ -45,37 +57,21 @@ class LoanController extends Controller
         $allMembers = $query->orderBy('created_at', 'desc')->get();
 
         // Transform data to include loan counts, total amounts, and total remaining balance
-        $allMembers->transform(function ($member) {
-            // Calculate total remaining balance (sum of balance column from all loans)
-            $totalRemainingBalance = $member->loans->sum('balance');
+        $allMembers->transform(function ($member) use ($borrowerTypeFilter) {
+            $loans = $member->loans;
+            $totalRemainingBalance = $loans->sum('balance');
 
-            // Set attributes directly on the model
-            $member->loans_count = $member->loans->count();
-            $member->total_loan_amount = $member->loans->sum('amount');
+            $member->loans_count = $loans->count();
+            $member->total_loan_amount = $loans->sum('amount');
             $member->total_remaining_balance = $totalRemainingBalance;
+            $member->borrower_names = $borrowerTypeFilter === 'non-member'
+                ? $loans->pluck('non_member_name')->filter()->unique()->values()->implode(', ')
+                : null;
 
-            // Make sure these attributes are included in JSON serialization
-            $member->makeVisible(['loans_count', 'total_loan_amount', 'total_remaining_balance']);
-
-            // Also set as attributes to ensure they're serialized
-            $member->setAttribute('loans_count', $member->loans->count());
-            $member->setAttribute('total_loan_amount', $member->loans->sum('amount'));
-            $member->setAttribute('total_remaining_balance', $totalRemainingBalance);
+            $member->makeVisible(['loans_count', 'total_loan_amount', 'total_remaining_balance', 'borrower_names']);
 
             return $member;
         });
-
-        // Filter by balance status before pagination
-        $balanceFilter = $request->get('balance_filter', 'all');
-        if ($balanceFilter === 'has_balance') {
-            $allMembers = $allMembers->filter(function ($member) {
-                return $member->total_remaining_balance > 0;
-            });
-        } elseif ($balanceFilter === 'paid') {
-            $allMembers = $allMembers->filter(function ($member) {
-                return $member->total_remaining_balance == 0;
-            });
-        }
 
         // Manually paginate the filtered results
         $perPage = 10;
@@ -101,7 +97,7 @@ class LoanController extends Controller
         return Inertia::render('Loans/Index', [
             'members' => $members,
             'allMembers' => $allMembers,
-            'filters' => $request->only(['search', 'balance_filter', 'member_id']),
+            'filters' => $request->only(['search', 'borrower_type', 'member_id']),
             'monthlyInterestPayments' => [],
             'remainingBalance' => 0,
         ]);

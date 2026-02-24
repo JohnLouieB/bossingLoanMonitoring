@@ -3,8 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Models\CashFlow;
+use App\Models\Loan;
 use App\Models\Member;
 use App\Models\MonthlyContribution;
+use App\Models\MonthlyInterestPayment;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -78,12 +80,62 @@ class DashboardController extends Controller
             ])
             ->toArray();
 
+        // Pending loan interest for this month - ALL loaners who haven't paid yet
+        $currentMonth = (int) date('n');
+        $currentYear = (int) date('Y');
+        $loansWithUnpaidInterest = Loan::with(['member', 'advancePayments', 'monthlyInterestPayments'])
+            ->get()
+            ->filter(function ($loan) use ($currentMonth, $currentYear) {
+                $remainingBalance = max(0, $loan->amount - $loan->advancePayments->sum('amount'));
+                if ($remainingBalance <= 0) {
+                    return false;
+                }
+                $paidThisMonth = $loan->monthlyInterestPayments
+                    ->where('month', $currentMonth)
+                    ->where('year', $currentYear)
+                    ->where('status', 'paid')
+                    ->isNotEmpty();
+                return ! $paidThisMonth;
+            })
+            ->map(function ($loan) use ($currentMonth, $currentYear) {
+                $isMemberBorrower = empty($loan->non_member_name);
+                $firstName = $isMemberBorrower
+                    ? ($loan->member?->first_name ?? 'Unknown')
+                    : (explode(' ', trim($loan->non_member_name ?? ''))[0] ?? $loan->non_member_name ?? 'Unknown');
+
+                $paymentThisMonth = $loan->monthlyInterestPayments
+                    ->where('month', $currentMonth)
+                    ->where('year', $currentYear)
+                    ->first();
+                $interestToPay = $paymentThisMonth
+                    ? (float) $paymentThisMonth->interest_amount
+                    : (float) ($loan->amount * ($loan->interest_rate / 100));
+
+                return [
+                    'loan_id' => $loan->id,
+                    'member_id' => $loan->member_id,
+                    'borrower_type' => $isMemberBorrower ? 'member' : 'non-member',
+                    'first_name' => $firstName,
+                    'loan_amount' => (float) $loan->amount,
+                    'interest_to_pay' => $interestToPay,
+                ];
+            })
+            ->groupBy('borrower_type')
+            ->map(fn ($items) => $items->values()->toArray())
+            ->toArray();
+
+        $pendingLoanInterest = [
+            'member' => $loansWithUnpaidInterest['member'] ?? [],
+            'non_member' => $loansWithUnpaidInterest['non-member'] ?? [],
+        ];
+
         return Inertia::render('Dashboard', [
             'availableBalanceByYear' => $availableBalanceByYear,
             'moneyReleasedByYear' => $moneyReleasedByYear,
             'interestCollectedByYear' => $interestCollectedByYear,
             'membersWithUnpaidContributions' => $membersWithUnpaidContributions,
             'topLoaners' => $topLoaners,
+            'pendingLoanInterest' => $pendingLoanInterest,
         ]);
     }
 }

@@ -79,13 +79,13 @@ const submit = () => {
             </div>
 
             <div class="mt-4 flex flex-wrap items-center justify-end gap-3">
-                <Link
+                <!-- <Link
                     v-if="canResetPassword"
                     :href="route('password.request')"
                     class="rounded-md text-sm text-gray-600 underline hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 order-2 sm:order-1"
                 >
                     Forgot your password?
-                </Link>
+                </Link> -->
 
                 <PrimaryButton
                     class="order-1 sm:order-2 w-full sm:w-auto sm:ms-4"

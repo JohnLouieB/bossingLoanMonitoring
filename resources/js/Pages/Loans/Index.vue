@@ -42,7 +42,7 @@ const props = defineProps({
 });
 
 const searchInput = ref(props.filters.search || '');
-const balanceFilter = ref(props.filters.balance_filter || 'all');
+const borrowerTypeFilter = ref(props.filters.borrower_type || 'member');
 const isLoanDetailModalVisible = ref(false);
 const isCreateLoanModalVisible = ref(false);
 const isMonthlyInterestModalVisible = ref(false);
@@ -138,16 +138,16 @@ watch(() => loanForm.borrower_type, (newType) => {
 const handleSearch = () => {
     router.get(route('loans.index'), { 
         search: searchInput.value,
-        balance_filter: balanceFilter.value,
+        borrower_type: borrowerTypeFilter.value,
     }, {
         preserveState: true,
         preserveScroll: true,
     });
 };
 
-// Handle balance filter change
-const handleBalanceFilterChange = (value) => {
-    balanceFilter.value = value;
+// Handle borrower type filter change
+const handleBorrowerTypeFilterChange = (value) => {
+    borrowerTypeFilter.value = value;
     handleSearch();
 };
 
@@ -625,13 +625,19 @@ const getStatusColor = (status) => {
     return colors[status] || 'default';
 };
 
-// Table columns
-const columns = [
-    {
-        title: 'First Name',
-        dataIndex: 'first_name',
-        key: 'first_name',
-    },
+// Table columns - Co-maker column shown when borrower type is non-member
+const columns = computed(() => {
+    const baseColumns = [
+        {
+            title: borrowerTypeFilter.value === 'non-member' ? 'Borrower' : 'First Name',
+            key: 'name',
+            customRender: ({ record }) => {
+                if (borrowerTypeFilter.value === 'non-member') {
+                    return h('span', record.borrower_names || '—');
+                }
+                return h('span', record.first_name);
+            },
+        },
     {
         title: 'Number of Loans',
         key: 'loans_count',
@@ -695,7 +701,21 @@ const columns = [
             });
         },
     },
-];
+    ];
+
+    // Add Co-maker column when borrower type is non-member
+    if (borrowerTypeFilter.value === 'non-member') {
+        baseColumns.splice(1, 0, {
+            title: 'Co-maker',
+            key: 'co_maker',
+            customRender: ({ record }) => {
+                return h('span', `${record.first_name} ${record.last_name}`.trim() || '—');
+            },
+        });
+    }
+
+    return baseColumns;
+});
 </script>
 
 <template>
@@ -727,13 +747,14 @@ const columns = [
                                     </template>
                                 </a-input>
                                 <a-select
-                                    v-model:value="balanceFilter"
+                                    v-model:value="borrowerTypeFilter"
+                                    placeholder="Borrower Type"
                                     class="w-full sm:w-[200px] shrink-0"
-                                    @change="handleBalanceFilterChange"
+                                    @change="handleBorrowerTypeFilterChange"
                                 >
-                                    <a-select-option value="all">All Loans</a-select-option>
-                                    <a-select-option value="has_balance">Has Balance</a-select-option>
-                                    <a-select-option value="paid">Paid (Zero Balance)</a-select-option>
+                                    <a-select-option value="all">All</a-select-option>
+                                    <a-select-option value="member">Member</a-select-option>
+                                    <a-select-option value="non-member">Non-Member</a-select-option>
                                 </a-select>
                             </div>
                             <a-button v-if="isAdmin" type="primary" @click="showCreateLoanModal" class="w-full sm:w-auto shrink-0">
@@ -774,7 +795,7 @@ const columns = [
                                     page: pagination.current,
                                     per_page: pagination.pageSize,
                                     search: searchInput,
-                                    balance_filter: balanceFilter,
+                                    borrower_type: borrowerTypeFilter,
                                 }, {
                                     preserveState: true,
                                     preserveScroll: true,

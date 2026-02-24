@@ -110,8 +110,9 @@ const handleMenuClick = ({ key }) => {
                         <div class="flex">
                            
                             <!-- Logo -->
-                            <div class="flex shrink-0 items-center truncate max-w-[160px] sm:max-w-[220px] lg:max-w-none text-sm sm:text-base font-semibold text-gray-800">
-                                BOSSING COOPERATIVE SOCIETY LTD.
+                            <div class="flex shrink-0 items-center gap-2 truncate max-w-[160px] sm:max-w-[220px] lg:max-w-none text-sm sm:text-base font-semibold text-gray-800">
+                                <img src="/bossing.png" alt="Bossing" class="h-8 w-8 sm:h-10 sm:w-10 object-cover rounded-full flex-shrink-0" />
+                                <span class="truncate">BOSSING COOPERATIVE SOCIETY LTD.</span>
                             </div>
 
                             <!-- Navigation Links -->
@@ -376,7 +377,7 @@ const handleMenuClick = ({ key }) => {
       </a-layout>
     </a-layout-content>
     <a-layout-footer class="text-center text-xs sm:text-sm py-4 hidden sm:block">
-      Bossing Loan Monitoring
+      &copy; {{ new Date().getFullYear() }} Bossing Loan Monitoring
     </a-layout-footer>
     <Chatbot />
     </div>

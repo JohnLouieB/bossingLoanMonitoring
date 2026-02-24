@@ -9,6 +9,7 @@ import {
     AlertCircle,
     Trophy,
     ArrowUpRight,
+    Percent,
 } from 'lucide-vue-next';
 
 const props = defineProps({
@@ -17,6 +18,10 @@ const props = defineProps({
     interestCollectedByYear: { type: Array, default: () => [] },
     membersWithUnpaidContributions: { type: Array, default: () => [] },
     topLoaners: { type: Array, default: () => [] },
+    pendingLoanInterest: {
+        type: Object,
+        default: () => ({ member: [], non_member: [] }),
+    },
 });
 
 function formatMoney(value) {
@@ -265,6 +270,73 @@ const maxInterest = computed(() =>
                         >
                             No data for interest collected.
                         </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Pending Loan Interest (this month) -->
+            <div class="rounded-xl border border-slate-200 bg-white shadow-sm">
+                <div class="border-b border-slate-200 px-6 py-4">
+                    <h3 class="flex items-center gap-2 text-base font-semibold text-slate-800">
+                        <Percent class="h-5 w-5 text-amber-500" />
+                        Pending Loan Interest
+                    </h3>
+                    <p class="mt-1 text-sm text-slate-500">
+                        Loaners who have not paid interest for this month
+                    </p>
+                </div>
+                <div class="grid grid-cols-1 gap-6 p-6 md:grid-cols-2">
+                    <!-- Member borrowers -->
+                    <div>
+                        <h4 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
+                            Member Borrowers
+                        </h4>
+                        <div class="max-h-60 overflow-auto space-y-2">
+                            <Link
+                                v-for="item in pendingLoanInterest.member"
+                                :key="'member-' + item.loan_id"
+                                :href="route('loans.index', { member_id: item.member_id })"
+                                class="flex items-center justify-between gap-3 rounded-lg border border-slate-100 bg-slate-50/50 px-4 py-2 transition hover:bg-slate-100"
+                            >
+                                <span class="font-medium text-slate-800">{{ item.first_name }}</span>
+                                <div class="shrink-0 text-right text-sm">
+                                    <span class="text-slate-600">Loan: {{ formatMoney(item.loan_amount) }}</span>
+                                    <span class="ml-2 font-semibold text-amber-600">Interest: {{ formatMoney(item.interest_to_pay) }}</span>
+                                </div>
+                            </Link>
+                            <p
+                                v-if="pendingLoanInterest.member.length === 0"
+                                class="py-4 text-center text-sm text-slate-400"
+                            >
+                                No pending interest
+                            </p>
+                        </div>
+                    </div>
+                    <!-- Non-member borrowers -->
+                    <div>
+                        <h4 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
+                            Non-Member Borrowers
+                        </h4>
+                        <div class="max-h-60 overflow-auto space-y-2">
+                            <Link
+                                v-for="item in pendingLoanInterest.non_member"
+                                :key="'nonmember-' + item.loan_id"
+                                :href="route('loans.index', { member_id: item.member_id })"
+                                class="flex items-center justify-between gap-3 rounded-lg border border-slate-100 bg-slate-50/50 px-4 py-2 transition hover:bg-slate-100"
+                            >
+                                <span class="font-medium text-slate-800">{{ item.first_name }}</span>
+                                <div class="shrink-0 text-right text-sm">
+                                    <span class="text-slate-600">Loan: {{ formatMoney(item.loan_amount) }}</span>
+                                    <span class="ml-2 font-semibold text-amber-600">Interest: {{ formatMoney(item.interest_to_pay) }}</span>
+                                </div>
+                            </Link>
+                            <p
+                                v-if="pendingLoanInterest.non_member.length === 0"
+                                class="py-4 text-center text-sm text-slate-400"
+                            >
+                                No pending interest
+                            </p>
+                        </div>
                     </div>
                 </div>
             </div>
