@@ -7,6 +7,7 @@ use App\Models\Loan;
 use App\Models\Member;
 use App\Models\MonthlyContribution;
 use App\Models\MonthlyInterestPayment;
+use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -15,7 +16,7 @@ class DashboardController extends Controller
     /**
      * Display the dashboard with metrics and charts.
      */
-    public function index(): Response
+    public function index(Request $request): Response
     {
         $years = CashFlow::orderBy('year')->pluck('year')->toArray();
 
@@ -80,22 +81,20 @@ class DashboardController extends Controller
             ])
             ->toArray();
 
-        // Pending loan interest for this month - ALL loaners who haven't paid yet
+        // Pending loan interest - filter by year (uses current month, only loans from selected year)
         $currentMonth = (int) date('n');
-        $currentYear = (int) date('Y');
+        $currentYear = (int) ($request->get('pending_year') ?? date('Y'));
         $loansWithUnpaidInterest = Loan::with(['member', 'advancePayments', 'monthlyInterestPayments'])
-            ->get()
-            ->filter(function ($loan) use ($currentMonth, $currentYear) {
-                $remainingBalance = max(0, $loan->amount - $loan->advancePayments->sum('amount'));
-                if ($remainingBalance <= 0) {
-                    return false;
-                }
-                $paidThisMonth = $loan->monthlyInterestPayments
-                    ->where('month', $currentMonth)
+            ->where('year', $currentYear)
+            ->whereDoesntHave('monthlyInterestPayments', function ($q) use ($currentMonth, $currentYear) {
+                $q->where('month', $currentMonth)
                     ->where('year', $currentYear)
-                    ->where('status', 'paid')
-                    ->isNotEmpty();
-                return ! $paidThisMonth;
+                    ->where('status', 'paid');
+            })
+            ->get()
+            ->filter(function ($loan) {
+                $remainingBalance = max(0, $loan->amount - $loan->advancePayments->sum('amount'));
+                return $remainingBalance > 0;
             })
             ->map(function ($loan) use ($currentMonth, $currentYear) {
                 $isMemberBorrower = empty($loan->non_member_name);
@@ -136,6 +135,7 @@ class DashboardController extends Controller
             'membersWithUnpaidContributions' => $membersWithUnpaidContributions,
             'topLoaners' => $topLoaners,
             'pendingLoanInterest' => $pendingLoanInterest,
+            'pendingInterestYear' => $currentYear,
         ]);
     }
 }

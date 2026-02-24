@@ -75,6 +75,12 @@ watch(() => props.remainingBalance, (newVal) => {
         remainingBalance.value = newVal;
     }
 }, { immediate: true });
+
+watch(() => props.filters?.borrower_type, (newVal) => {
+    if (newVal) {
+        borrowerTypeFilter.value = newVal;
+    }
+}, { immediate: true });
 const advancePaymentForm = useForm({
     amount: '',
     payment_date: new Date().toISOString().split('T')[0],
@@ -186,14 +192,18 @@ const handleLoanSelect = (member, loanId) => {
     }
 };
 
-// Load monthly interest data
+// Load monthly interest data - pass current filters to preserve borrower type view
 const loadMonthlyInterestData = () => {
     if (!selectedLoan.value) return;
     
-    router.get(route('loans.show', selectedLoan.value.id), {}, {
+    router.get(route('loans.show', selectedLoan.value.id), {
+        borrower_type: borrowerTypeFilter.value,
+        search: searchInput.value,
+        member_id: props.filters?.member_id,
+    }, {
         preserveState: true,
         preserveScroll: true,
-        only: ['monthlyInterestPayments', 'remainingBalance'],
+        only: ['monthlyInterestPayments', 'remainingBalance', 'members', 'filters'],
         onSuccess: (page) => {
             // Update directly to ensure it works
             if (page.props.monthlyInterestPayments) {
@@ -219,9 +229,9 @@ const loadMonthlyInterestData = () => {
 const reloadAdvancePayments = () => {
     if (!selectedLoan.value || !selectedMemberForLoans.value) return;
     
-    // Reload members to get fresh loan data
+    // Reload members to get fresh loan data (preserves current URL and filters)
     router.reload({ 
-        only: ['members'],
+        only: ['members', 'filters'],
         preserveState: true,
         preserveScroll: true,
         onSuccess: () => {
@@ -386,7 +396,10 @@ const monthlyInterestColumns = [
         key: 'month',
         width: 150,
         customRender: ({ record }) => {
-            return getMonthName(record.month);
+            const monthYear = monthlyInterestData.value?.some(r => r.year !== record.year)
+                ? ` ${record.year}`
+                : '';
+            return getMonthName(record.month) + monthYear;
         },
     },
     {
@@ -516,14 +529,18 @@ const handleStatusUpdate = () => {
     });
 };
 
-// Create Loan
+// Create Loan - always start with a completely fresh form
 const showCreateLoanModal = () => {
     loanForm.reset();
     loanForm.clearErrors();
     loanForm.borrower_type = 'member';
+    loanForm.member_id = null;
+    loanForm.non_member_name = '';
+    loanForm.amount = '';
     loanForm.status = 'pending';
     loanForm.year = new Date().getFullYear();
     loanForm.interest_rate = 3; // Set initial interest rate for member
+    loanForm.description = '';
     isCreateLoanModalVisible.value = true;
 };
 
@@ -686,10 +703,12 @@ const columns = computed(() => {
             const options = record.loans.map(loan => {
                 // Use balance from database column
                 const balance = loan.balance !== undefined ? loan.balance : parseFloat(loan.amount || 0);
-                
+                const borrowerLabel = borrowerTypeFilter.value === 'non-member' && loan.non_member_name
+                    ? `${loan.non_member_name}: `
+                    : '';
                 return {
                     value: loan.id,
-                    label: `${formatCurrency(loan.amount)} - ${loan.status.toUpperCase()} - Balance: ${formatCurrency(balance)}`,
+                    label: `${borrowerLabel}${formatCurrency(loan.amount)} - ${loan.status.toUpperCase()} - Balance: ${formatCurrency(balance)}`,
                 };
             });
 
@@ -966,11 +985,11 @@ const columns = computed(() => {
             </template>
             <div v-if="selectedLoan && selectedMemberForLoans" style="padding: 16px 0;">
                 <a-descriptions :column="1" bordered>
-                    <a-descriptions-item :label="selectedMemberForLoans.loans[0].non_member_name ? 'Co-Maker Name' : 'Member Name'">
+                    <a-descriptions-item :label="selectedLoan.non_member_name ? 'Co-Maker Name' : 'Member Name'">
                         {{ selectedMemberForLoans.first_name }} {{ selectedMemberForLoans.last_name }}
                     </a-descriptions-item>
-                    <a-descriptions-item label="Non-Member Name">
-                        {{ selectedMemberForLoans.loans[0].non_member_name }}
+                    <a-descriptions-item v-if="selectedLoan.non_member_name" label="Non-Member Name (Borrower)">
+                        {{ selectedLoan.non_member_name }}
                     </a-descriptions-item>
                     <a-descriptions-item label="Member Email">
                         {{ selectedMemberForLoans.email }}

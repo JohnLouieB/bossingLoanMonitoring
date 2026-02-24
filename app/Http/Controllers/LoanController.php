@@ -117,7 +117,8 @@ class LoanController extends Controller
     public function store(Request $request)
     {
         // Prepare data for validation - convert empty strings to null
-        $data = $request->all();
+        // Explicitly reject any request that might accidentally trigger an update
+        $data = $request->except(['id', 'loan_id', '_method']);
         if (isset($data['non_member_name']) && $data['non_member_name'] === '') {
             $data['non_member_name'] = null;
         }
@@ -185,6 +186,7 @@ class LoanController extends Controller
         }
 
         try {
+            // Always create a new loan record - never update existing ones
             $loan = Loan::create($loanData);
 
             // Update cash flow for the selected year
@@ -241,29 +243,33 @@ class LoanController extends Controller
 
         // Use loan's year if set, otherwise use current year
         $targetYear = $loan->year ?? date('Y');
+        $currentYear = (int) date('Y');
+        $yearsToEnsure = array_unique([$targetYear, $currentYear]);
 
-        // Initialize monthly interest payments for the loan's year if they don't exist
-        for ($month = 1; $month <= 12; $month++) {
-            $existingPayment = MonthlyInterestPayment::where('loan_id', $loan->id)
-                ->where('month', $month)
-                ->where('year', $targetYear)
-                ->first();
+        // Initialize monthly interest payments for the loan's year and current year (for multi-year loans)
+        foreach ($yearsToEnsure as $year) {
+            for ($month = 1; $month <= 12; $month++) {
+                $existingPayment = MonthlyInterestPayment::where('loan_id', $loan->id)
+                    ->where('month', $month)
+                    ->where('year', $year)
+                    ->first();
 
-            if (! $existingPayment) {
-                // January is always 0 peso (payments start in February)
-                $interestAmount = $month === 1 ? 0 : (($loan->remaining_balance * $loan->interest_rate) / 100);
+                if (! $existingPayment) {
+                    // January is always 0 peso (payments start in February)
+                    $interestAmount = $month === 1 ? 0 : (($loan->remaining_balance * $loan->interest_rate) / 100);
 
-                MonthlyInterestPayment::create([
-                    'loan_id' => $loan->id,
-                    'month' => $month,
-                    'year' => $targetYear,
-                    'interest_amount' => $interestAmount,
-                    'status' => 'pending',
-                ]);
-            } else {
-                // Ensure January is always 0
-                if ($month === 1 && $existingPayment->interest_amount != 0) {
-                    $existingPayment->update(['interest_amount' => 0]);
+                    MonthlyInterestPayment::create([
+                        'loan_id' => $loan->id,
+                        'month' => $month,
+                        'year' => $year,
+                        'interest_amount' => $interestAmount,
+                        'status' => 'pending',
+                    ]);
+                } else {
+                    // Ensure January is always 0
+                    if ($month === 1 && $existingPayment->interest_amount != 0) {
+                        $existingPayment->update(['interest_amount' => 0]);
+                    }
                 }
             }
         }
@@ -278,7 +284,12 @@ class LoanController extends Controller
         $loan->setAttribute('balance', $balance);
         $loan->makeVisible(['balance', 'description']);
 
-        $monthlyInterestPayments = $loan->monthlyInterestPayments()->where('year', $targetYear)->get()->toArray();
+        $monthlyInterestPayments = $loan->monthlyInterestPayments()
+            ->whereIn('year', $yearsToEnsure)
+            ->orderBy('year')
+            ->orderBy('month')
+            ->get()
+            ->toArray();
 
         // Return JSON for AJAX requests (used in modal via fetch)
         if ($request->wantsJson() && ! $request->header('X-Inertia')) {
@@ -291,12 +302,27 @@ class LoanController extends Controller
         }
 
         // Return Inertia response (for router.get calls with 'only' option)
-        // Since we're using 'only', we need to return to the same page component
-        // Get the current index data to return
-        $query = Member::whereHas('loans')
-            ->with(['loans' => function ($q) {
-                $q->orderBy('created_at', 'desc');
-            }]);
+        // Preserve borrower_type filter so non-member view doesn't reset to all loans
+        $borrowerTypeFilter = $request->get('borrower_type', 'member');
+        $query = Member::whereHas('loans', function ($q) use ($borrowerTypeFilter) {
+            if ($borrowerTypeFilter === 'member') {
+                $q->whereNull('non_member_name');
+            } elseif ($borrowerTypeFilter === 'non-member') {
+                $q->whereNotNull('non_member_name');
+            }
+        })->with(['loans' => function ($q) use ($borrowerTypeFilter) {
+            $q->with('advancePayments')->orderBy('created_at', 'desc');
+            if ($borrowerTypeFilter === 'member') {
+                $q->whereNull('non_member_name');
+            } elseif ($borrowerTypeFilter === 'non-member') {
+                $q->whereNotNull('non_member_name');
+            }
+        }]);
+
+        // Filter by member (e.g. from dashboard link)
+        if ($request->filled('member_id')) {
+            $query->where('id', $request->member_id);
+        }
 
         // Preserve search filter if exists
         if ($request->has('search') && $request->search) {
@@ -308,11 +334,9 @@ class LoanController extends Controller
             });
         }
 
-        $members = $query->with(['loans' => function ($q) {
-            $q->with('advancePayments')->orderBy('created_at', 'desc');
-        }])->orderBy('created_at', 'desc')->paginate(10);
+        $members = $query->orderBy('created_at', 'desc')->paginate(10);
 
-        $members->getCollection()->transform(function ($member) {
+        $members->getCollection()->transform(function ($member) use ($borrowerTypeFilter) {
             // Calculate balance for each loan
             $member->loans->transform(function ($loan) {
                 $totalAdvancePayments = $loan->advancePayments->sum('amount');
@@ -330,7 +354,10 @@ class LoanController extends Controller
             $member->loans_count = $member->loans->count();
             $member->total_loan_amount = $member->loans->sum('amount');
             $member->total_remaining_balance = $totalRemainingBalance;
-            $member->makeVisible(['loans_count', 'total_loan_amount', 'total_remaining_balance']);
+            $member->borrower_names = $borrowerTypeFilter === 'non-member'
+                ? $member->loans->pluck('non_member_name')->filter()->unique()->values()->implode(', ')
+                : null;
+            $member->makeVisible(['loans_count', 'total_loan_amount', 'total_remaining_balance', 'borrower_names']);
 
             return $member;
         });
@@ -340,7 +367,7 @@ class LoanController extends Controller
         return Inertia::render('Loans/Index', [
             'members' => $members,
             'allMembers' => $allMembers,
-            'filters' => $request->only(['search']),
+            'filters' => $request->only(['search', 'borrower_type', 'member_id']),
             'monthlyInterestPayments' => $monthlyInterestPayments,
             'remainingBalance' => $loan->remaining_balance,
         ]);
@@ -374,12 +401,13 @@ class LoanController extends Controller
         $newStatus = $validated['status'];
         $interestAmount = $monthlyInterest->interest_amount;
         $loanYear = $loan->year;
+        $paymentYear = (int) $validated['year']; // Use payment's year for cash flow (handles multi-year loans)
 
         // Handle capital adjustment based on status change
-        if ($loanYear) {
+        if ($paymentYear) {
             if ($oldStatus === 'pending' && $newStatus === 'paid') {
                 // Add interest to capital when marked as paid
-                $cashFlow = CashFlow::getOrCreate($loanYear);
+                $cashFlow = CashFlow::getOrCreate($paymentYear);
                 $cashFlow->capital += $interestAmount;
                 $cashFlow->save();
 
@@ -392,7 +420,7 @@ class LoanController extends Controller
                 $monthName = date('F', mktime(0, 0, 0, $validated['month'], 1));
 
                 CapitalTransaction::create([
-                    'year' => $loanYear,
+                    'year' => $paymentYear,
                     'loan_id' => $loan->id,
                     'type' => 'addition',
                     'amount' => $interestAmount,
@@ -400,7 +428,7 @@ class LoanController extends Controller
                 ]);
             } elseif ($oldStatus === 'paid' && $newStatus === 'pending') {
                 // Deduct interest from capital when marked as pending (revert)
-                $cashFlow = CashFlow::where('year', $loanYear)->first();
+                $cashFlow = CashFlow::where('year', $paymentYear)->first();
                 if ($cashFlow) {
                     $cashFlow->capital = max(0, $cashFlow->capital - $interestAmount);
                     $cashFlow->save();
@@ -409,7 +437,7 @@ class LoanController extends Controller
                 // Delete the capital transaction for this interest payment
                 $monthName = date('F', mktime(0, 0, 0, $validated['month'], 1));
                 CapitalTransaction::where('loan_id', $loan->id)
-                    ->where('year', $loanYear)
+                    ->where('year', $paymentYear)
                     ->where('type', 'addition')
                     ->where('description', 'like', '%Interest payment%' . $monthName . '%')
                     ->where('amount', $interestAmount)
@@ -428,21 +456,22 @@ class LoanController extends Controller
         // Refresh the model to ensure we have the latest data from database
         $monthlyInterest->refresh();
 
-        // Update interest_collected for the loan's year after status update
-        // This recalculates the TOTAL of ALL paid interest payments for loans in this year
-        // It sums all paid payments, not just adds/subtracts incrementally
-        if ($loanYear) {
-            CashFlow::recalculateInterestCollected($loanYear);
-        }
+        // Update interest_collected for the payment's year after status update
+        CashFlow::recalculateInterestCollected($paymentYear);
 
         // Reload loan with updated monthly interest payments
         $loan->refresh();
         $loan->load(['monthlyInterestPayments', 'advancePayments']);
-        // Use loan's year if set, otherwise use current year
-        $targetYear = $loan->year ?? date('Y');
+        $currentYear = (int) date('Y');
+        $yearsToEnsure = array_unique([$loan->year ?? $currentYear, $currentYear]);
 
-        // Return Inertia response with updated data
-        $monthlyInterestPayments = $loan->monthlyInterestPayments()->where('year', $targetYear)->get()->toArray();
+        // Return Inertia response with updated data (include both loan year and current year)
+        $monthlyInterestPayments = $loan->monthlyInterestPayments()
+            ->whereIn('year', $yearsToEnsure)
+            ->orderBy('year')
+            ->orderBy('month')
+            ->get()
+            ->toArray();
 
         return back()->with([
             'success' => 'Monthly interest payment updated successfully.',

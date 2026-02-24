@@ -1,7 +1,7 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, Link } from '@inertiajs/vue3';
-import { computed } from 'vue';
+import { Head, Link, router } from '@inertiajs/vue3';
+import { computed, ref, watch } from 'vue';
 import {
     Wallet,
     TrendingUp,
@@ -22,7 +22,26 @@ const props = defineProps({
         type: Object,
         default: () => ({ member: [], non_member: [] }),
     },
+    pendingInterestYear: { type: Number, default: () => new Date().getFullYear() },
 });
+
+const selectedYear = ref(props.pendingInterestYear);
+
+const currentYear = new Date().getFullYear();
+const yearOptions = Array.from({ length: 5 }, (_, i) => ({
+    value: currentYear - 2 + i,
+    label: String(currentYear - 2 + i),
+}));
+
+const handlePendingInterestFilterChange = () => {
+    router.get(route('dashboard'), {
+        pending_year: selectedYear.value,
+    }, { preserveState: true });
+};
+
+watch(() => props.pendingInterestYear, (y) => {
+    selectedYear.value = y ?? new Date().getFullYear();
+}, { immediate: true });
 
 function formatMoney(value) {
     if (value == null || Number.isNaN(value)) return '0.00';
@@ -277,13 +296,28 @@ const maxInterest = computed(() =>
             <!-- Pending Loan Interest (this month) -->
             <div class="rounded-xl border border-slate-200 bg-white shadow-sm">
                 <div class="border-b border-slate-200 px-6 py-4">
-                    <h3 class="flex items-center gap-2 text-base font-semibold text-slate-800">
-                        <Percent class="h-5 w-5 text-amber-500" />
-                        Pending Loan Interest
-                    </h3>
-                    <p class="mt-1 text-sm text-slate-500">
-                        Loaners who have not paid interest for this month
-                    </p>
+                    <div class="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                            <h3 class="flex items-center gap-2 text-base font-semibold text-slate-800">
+                                <Percent class="h-5 w-5 text-amber-500" />
+                                Pending Loan Interest
+                            </h3>
+                            <p class="mt-1 text-sm text-slate-500">
+                                Loaners who have not paid interest for this month
+                            </p>
+                        </div>
+                        <div class="flex items-center gap-2 shrink-0">
+                            <a-select
+                                v-model:value="selectedYear"
+                                class="w-[90px]"
+                                @change="handlePendingInterestFilterChange"
+                            >
+                                <a-select-option v-for="opt in yearOptions" :key="opt.value" :value="opt.value">
+                                    {{ opt.label }}
+                                </a-select-option>
+                            </a-select>
+                        </div>
+                    </div>
                 </div>
                 <div class="grid grid-cols-1 gap-6 p-6 md:grid-cols-2">
                     <!-- Member borrowers -->
