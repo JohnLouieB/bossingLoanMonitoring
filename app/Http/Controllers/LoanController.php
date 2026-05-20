@@ -532,7 +532,8 @@ class LoanController extends Controller
         $targetYear = $loan->year ?? date('Y');
         $currentMonth = date('n');
         $remainingBalance = $loan->fresh()->remaining_balance;
-        $createdMonth = $loan->created_at ? (int) $loan->created_at->format('n') : 1;
+        $referenceDate = $loan->loan_date ?? $loan->created_at;
+        $createdMonth = $referenceDate ? (int) $referenceDate->format('n') : 1;
 
         for ($month = $currentMonth; $month <= 12; $month++) {
             $monthlyInterest = MonthlyInterestPayment::where('loan_id', $loan->id)
@@ -603,7 +604,8 @@ class LoanController extends Controller
         $targetYear = $loan->year ?? date('Y');
         $currentMonth = date('n');
         $remainingBalance = $loan->fresh()->remaining_balance;
-        $createdMonth = $loan->created_at ? (int) $loan->created_at->format('n') : 1;
+        $referenceDate = $loan->loan_date ?? $loan->created_at;
+        $createdMonth = $referenceDate ? (int) $referenceDate->format('n') : 1;
 
         for ($month = $currentMonth; $month <= 12; $month++) {
             $monthlyInterest = MonthlyInterestPayment::where('loan_id', $loan->id)
