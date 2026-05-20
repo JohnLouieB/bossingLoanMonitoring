@@ -248,9 +248,10 @@ class LoanController extends Controller
         $currentYear = (int) date('Y');
         $yearsToEnsure = array_unique([$targetYear, $currentYear]);
 
-        // Interest starts the month after loan creation: loan made in Feb → first interest in March
-        // Apply creation month across all years (loan year may differ from creation year)
-        $createdMonth = $loan->created_at ? (int) $loan->created_at->format('n') : 1;
+        // Interest starts the month after the loan date (or created_at as fallback).
+        // e.g. loan dated Feb → first interest month is March.
+        $referenceDate = $loan->loan_date ?? $loan->created_at;
+        $createdMonth = $referenceDate ? (int) $referenceDate->format('n') : 1;
 
         // Initialize monthly interest payments for the loan's year and current year (for multi-year loans)
         foreach ($yearsToEnsure as $year) {
