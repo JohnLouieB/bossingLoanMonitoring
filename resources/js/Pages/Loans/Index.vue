@@ -2,6 +2,7 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, router, useForm, usePage } from '@inertiajs/vue3';
 import { ref, watch, h, computed } from 'vue';
+import dayjs from 'dayjs';
 import { Tag, Button, Select, Descriptions, message, List, Card, Collapse } from 'ant-design-vue';
 
 const DescriptionsItem = Descriptions.Item;
@@ -106,6 +107,7 @@ const loanForm = useForm({
     status: 'pending',
     description: '',
     year: new Date().getFullYear(),
+    loan_date: new Date().toISOString().split('T')[0],
 });
 
 // Member options for select
@@ -951,6 +953,19 @@ const columns = computed(() => {
                     />
                 </a-form-item>
 
+                <a-form-item
+                    label="Loan Date"
+                    :validate-status="loanForm.errors.loan_date ? 'error' : ''"
+                    :help="loanForm.errors.loan_date"
+                >
+                    <a-date-picker
+                        :value="loanForm.loan_date ? dayjs(loanForm.loan_date) : null"
+                        @change="(_, dateString) => loanForm.loan_date = dateString"
+                        style="width: 100%"
+                        placeholder="Select loan date"
+                    />
+                </a-form-item>
+
             </a-form>
         </a-modal>
 
@@ -1056,6 +1071,9 @@ const columns = computed(() => {
                     </a-descriptions-item>
                     <a-descriptions-item label="Description">
                         {{ selectedLoan.description || 'N/A' }}
+                    </a-descriptions-item>
+                    <a-descriptions-item label="Loan Date">
+                        {{ selectedLoan.loan_date ? new Date(selectedLoan.loan_date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'N/A' }}
                     </a-descriptions-item>
                     <a-descriptions-item label="Created At">
                         {{ new Date(selectedLoan.created_at).toLocaleString() }}

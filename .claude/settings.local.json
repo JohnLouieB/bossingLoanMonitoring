@@ -18,7 +18,10 @@
       "PowerShell(& \"C:\\\\laragon\\\\bin\\\\mysql\\\\mysql-8.0.30-winx64\\\\bin\\\\mysql.exe\" -u root -e \"CREATE DATABASE IF NOT EXISTS bossingloanmonitoring;\" 2>&1)",
       "Bash(php *)",
       "Bash(npm run *)",
-      "Bash(powershell *)"
+      "Bash(powershell *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)"
     ]
   }
 }

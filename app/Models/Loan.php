@@ -17,6 +17,11 @@ class Loan extends Model
         'status',
         'description',
         'year',
+        'loan_date',
+    ];
+
+    protected $casts = [
+        'loan_date' => 'date:Y-m-d',
     ];
 
     /**

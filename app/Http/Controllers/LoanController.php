@@ -135,6 +135,7 @@ class LoanController extends Controller
             'status' => 'nullable|in:pending,approved,rejected,paid',
             'description' => 'nullable|string',
             'year' => 'required|integer|min:2000|max:2100',
+            'loan_date' => 'nullable|date',
         ])->validate();
 
         // Set default interest rate based on borrower type if not provided
@@ -149,6 +150,7 @@ class LoanController extends Controller
             'status' => $validated['status'] ?? 'pending',
             'description' => $validated['description'] ?? null,
             'year' => $validated['year'],
+            'loan_date' => $validated['loan_date'] ?? null,
         ];
 
         // Set member_id and non_member_name based on borrower type
