@@ -31,6 +31,11 @@ class MonthlyContributionController extends Controller
             });
         }
 
+        // Exclude members who joined after the selected year
+        $query->where(function ($q) use ($currentYear) {
+            $q->whereNull('joined_year')->orWhere('joined_year', '<=', $currentYear);
+        });
+
         $members = $query->with(['monthlyContributions' => function ($q) use ($currentYear) {
             $q->where('year', $currentYear)->orderBy('month');
         }])->orderBy('created_at', 'desc')->get();

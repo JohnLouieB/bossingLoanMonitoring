@@ -12,6 +12,7 @@ class Member extends Model
         'last_name',
         'email',
         'is_active',
+        'joined_year',
     ];
 
     /**

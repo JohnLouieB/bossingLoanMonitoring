@@ -31,10 +31,13 @@ class ReportController extends Controller
         // Total money released across all years
         $totalMoneyReleasedAllYears = (float) CashFlow::sum('money_released');
 
-        // Get all active members with email
+        // Get all active members with email who joined on or before the current year
         $members = Member::where('is_active', true)
             ->whereNotNull('email')
             ->where('email', '!=', '')
+            ->where(function ($q) use ($currentYear) {
+                $q->whereNull('joined_year')->orWhere('joined_year', '<=', $currentYear);
+            })
             ->with(['loans.monthlyInterestPayments', 'loans.advancePayments', 'monthlyContributions'])
             ->get();
 

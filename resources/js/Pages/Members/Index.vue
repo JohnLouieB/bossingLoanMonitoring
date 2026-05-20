@@ -47,11 +47,14 @@ const isEditModalVisible = ref(false);
 const isDeleteModalVisible = ref(false);
 const selectedMember = ref(null);
 
+const currentYear = new Date().getFullYear();
+
 const addForm = useForm({
     first_name: '',
     last_name: '',
     email: '',
     is_active: true,
+    joined_year: currentYear,
 });
 
 const editForm = useForm({
@@ -59,6 +62,7 @@ const editForm = useForm({
     last_name: '',
     email: '',
     is_active: true,
+    joined_year: currentYear,
 });
 
 // Search functionality
@@ -106,6 +110,7 @@ const showEditModal = (member) => {
     editForm.last_name = member.last_name;
     editForm.email = member.email;
     editForm.is_active = member.is_active === 1 ? true : false;
+    editForm.joined_year = member.joined_year ?? currentYear;
     editForm.clearErrors();
     isEditModalVisible.value = true;
 };
@@ -171,6 +176,15 @@ const columns = [
             return h(Tag, {
                 color: record.is_active ? 'green' : 'red'
             }, () => record.is_active ? 'Active' : 'Inactive');
+        },
+    },
+    {
+        title: 'Year Joined',
+        dataIndex: 'joined_year',
+        key: 'joined_year',
+        width: 120,
+        customRender: ({ record }) => {
+            return h(Tag, { color: 'blue' }, () => record.joined_year ?? '—');
         },
     },
     {
@@ -310,6 +324,19 @@ const columns = [
                         {{ addForm.is_active ? 'Active' : 'Inactive' }}
                     </span>
                 </a-form-item>
+                <a-form-item
+                    label="Year Joined"
+                    :validate-status="addForm.errors.joined_year ? 'error' : ''"
+                    :help="addForm.errors.joined_year"
+                >
+                    <a-input-number
+                        v-model:value="addForm.joined_year"
+                        :min="2000"
+                        :max="2100"
+                        placeholder="e.g. 2026"
+                        style="width: 100%"
+                    />
+                </a-form-item>
             </a-form>
         </a-modal>
 
@@ -359,6 +386,19 @@ const columns = [
                     <span style="margin-left: 8px;">
                         {{ editForm.is_active ? 'Active' : 'Inactive' }}
                     </span>
+                </a-form-item>
+                <a-form-item
+                    label="Year Joined"
+                    :validate-status="editForm.errors.joined_year ? 'error' : ''"
+                    :help="editForm.errors.joined_year"
+                >
+                    <a-input-number
+                        v-model:value="editForm.joined_year"
+                        :min="2000"
+                        :max="2100"
+                        placeholder="e.g. 2026"
+                        style="width: 100%"
+                    />
                 </a-form-item>
             </a-form>
         </a-modal>

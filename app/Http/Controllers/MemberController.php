@@ -44,7 +44,10 @@ class MemberController extends Controller
             'last_name' => 'required|string|max:255',
             'email' => 'required|email|unique:members,email|max:255',
             'is_active' => 'boolean',
+            'joined_year' => 'nullable|integer|min:2000|max:2100',
         ]);
+
+        $validated['joined_year'] ??= (int) now()->year;
 
         Member::create($validated);
 
@@ -62,6 +65,7 @@ class MemberController extends Controller
             'last_name' => 'required|string|max:255',
             'email' => 'required|email|unique:members,email,' . $member->id . '|max:255',
             'is_active' => 'boolean',
+            'joined_year' => 'nullable|integer|min:2000|max:2100',
         ]);
 
         $member->update($validated);
