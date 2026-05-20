@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"C:\\\\laragon\\\\www\\\\bossingLoanMonitoring\" -Directory)",
+      "Bash(Select-Object Name)",
+      "Bash(php artisan *)",
+      "Bash(composer install *)",
+      "Bash(curl *)",
+      "PowerShell(curl -s -o $null -w \"%{http_code}\" \"http://bossingloanmonitoring.test/login\" 2>&1)",
+      "PowerShell(try { $r = Invoke-WebRequest -Uri \"http://bossingloanmonitoring.test/login\" -UseBasicParsing -ErrorAction Stop; $r.StatusCode } catch { $_.Exception.Message })",
+      "PowerShell(try { $r = Invoke-WebRequest -Uri \"http://localhost/bossingLoanMonitoring/public/login\" -UseBasicParsing -ErrorAction Stop; $r.StatusCode } catch { $_.Exception.Message })",
+      "Bash(node *)",
+      "Bash(npm install *)",
+      "Bash(npx playwright *)",
+      "PowerShell(npm install *)",
+      "PowerShell(node -e \"const {chromium}=require\\('C:/Users/johnl/pw-tmp/node_modules/playwright'\\);console.log\\('ok'\\)\" 2>&1)",
+      "Bash(mysql *)",
+      "PowerShell(& \"C:\\\\laragon\\\\bin\\\\mysql\\\\mysql-8.0.30-winx64\\\\bin\\\\mysql.exe\" -u root -e \"CREATE DATABASE IF NOT EXISTS bossingloanmonitoring;\" 2>&1)",
+      "Bash(php *)",
+      "Bash(npm run *)",
+      "Bash(powershell *)"
+    ]
+  }
+}
