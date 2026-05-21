@@ -11,6 +11,7 @@ class CapitalDeduction extends Model
         'year',
         'amount',
         'month',
+        'type',
         'description',
         'user_id',
     ];

@@ -8,6 +8,7 @@ use App\Models\CashFlow;
 use App\Models\Loan;
 use App\Models\MonthlyContribution;
 use App\Models\MonthlyInterestPayment;
+use App\Models\SystemSetting;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -70,10 +71,13 @@ class CapitalCashFlowController extends Controller
                     'amount' => $d->amount,
                     'month' => $d->month,
                     'month_name' => $monthName,
+                    'type' => $d->type ?? 'monthly_fee',
                     'description' => $d->description ?? "{$who} has deducted {$d->amount} pesos for fee of the month of {$monthName}.",
                     'created_at' => $d->created_at,
                 ];
             });
+
+        $monthlyServerAmount = (float) SystemSetting::current()->monthly_server_amount;
 
         // Activity table: single list with tab filter (transactions | interest | contributions), search, pagination
         $activityTab = $request->get('activity_tab', 'transactions');
@@ -97,6 +101,7 @@ class CapitalCashFlowController extends Controller
             'totalAdvancePayments' => $totalAdvancePayments,
             'totalDeductions' => (float) $totalDeductions,
             'deductions' => $deductions,
+            'monthlyServerAmount' => $monthlyServerAmount,
             'moneyReleased' => $moneyReleased,
             'currentYear' => (int) $currentYear,
             'filters' => $request->only(['year']),
@@ -126,7 +131,7 @@ class CapitalCashFlowController extends Controller
     }
 
     /**
-     * Store a deduction (e.g. monthly fee) for the current or selected year. Deduction reduces Available Capital.
+     * Store a monthly fee deduction for the current or selected year.
      */
     public function storeDeduction(Request $request)
     {
@@ -138,26 +143,66 @@ class CapitalCashFlowController extends Controller
         $month = (int) date('n');
         $amount = 15;
 
-        // Prevent duplicate deduction for the same year+month
-        $exists = CapitalDeduction::where('year', $year)->where('month', $month)->exists();
+        $exists = CapitalDeduction::where('year', $year)->where('month', $month)->where('type', 'monthly_fee')->exists();
         if ($exists) {
             return redirect()->route('capital-cash-flow.index', ['year' => $year])
                 ->with('error', 'A deduction for this month has already been recorded. You can deduct again next month.');
         }
 
-        $monthName = date('F', mktime(0, 0, 0, $month, 1)); // e.g. February
+        $monthName = date('F', mktime(0, 0, 0, $month, 1));
         $description = 'An admin has deducted a ' . $amount . ' pesos for fee of the month of ' . $monthName;
 
         CapitalDeduction::create([
             'year' => $year,
             'amount' => $amount,
             'month' => $month,
+            'type' => 'monthly_fee',
             'description' => $description,
             'user_id' => $request->user()->id,
         ]);
 
         return redirect()->route('capital-cash-flow.index', ['year' => $year])
             ->with('success', 'Deduction recorded.');
+    }
+
+    /**
+     * Store a monthly server fee deduction using the amount from system settings.
+     */
+    public function storeServerFeeDeduction(Request $request)
+    {
+        $request->validate([
+            'year' => 'nullable|integer|min:2000|max:2100',
+        ]);
+
+        $year = (int) ($request->input('year') ?? date('Y'));
+        $month = (int) date('n');
+        $amount = (float) SystemSetting::current()->monthly_server_amount;
+
+        if ($amount <= 0) {
+            return redirect()->route('capital-cash-flow.index', ['year' => $year])
+                ->with('error', 'Monthly server amount is not set in system settings.');
+        }
+
+        $exists = CapitalDeduction::where('year', $year)->where('month', $month)->where('type', 'server_fee')->exists();
+        if ($exists) {
+            return redirect()->route('capital-cash-flow.index', ['year' => $year])
+                ->with('error', 'A server fee deduction for this month has already been recorded.');
+        }
+
+        $monthName = date('F', mktime(0, 0, 0, $month, 1));
+        $description = 'Deducted monthly server fee of ₱' . number_format($amount, 2) . ' for ' . $monthName . '.';
+
+        CapitalDeduction::create([
+            'year' => $year,
+            'amount' => $amount,
+            'month' => $month,
+            'type' => 'server_fee',
+            'description' => $description,
+            'user_id' => $request->user()->id,
+        ]);
+
+        return redirect()->route('capital-cash-flow.index', ['year' => $year])
+            ->with('success', 'Server fee deduction recorded.');
     }
 
     /**

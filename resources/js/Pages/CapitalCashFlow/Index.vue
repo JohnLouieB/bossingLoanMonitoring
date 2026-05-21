@@ -67,6 +67,10 @@ const props = defineProps({
         type: Number,
         default: 0,
     },
+    monthlyServerAmount: {
+        type: Number,
+        default: 0,
+    },
 });
 
 const page = usePage();
@@ -157,9 +161,14 @@ const deductButtonLabel = computed(() => {
 // Current calendar month (1-12) - deductions are stored per year+month
 const currentCalendarMonth = computed(() => new Date().getMonth() + 1);
 
-// Disable deduct button if this month's deduction already exists for the selected year (avoids duplication until next month)
+// Disable deduct button if this month's monthly_fee deduction already exists
 const deductionAlreadyDoneForCurrentMonth = computed(() => {
-    return (props.deductions || []).some((d) => d.month === currentCalendarMonth.value);
+    return (props.deductions || []).some((d) => d.month === currentCalendarMonth.value && d.type === 'monthly_fee');
+});
+
+// Disable server fee button if this month's server_fee deduction already exists
+const serverFeeAlreadyDoneForCurrentMonth = computed(() => {
+    return (props.deductions || []).some((d) => d.month === currentCalendarMonth.value && d.type === 'server_fee');
 });
 
 // Submit deduction (admin only)
@@ -170,6 +179,17 @@ const submitDeduction = () => {
     router.post(route('capital-cash-flow.deductions.store'), { year: selectedYear.value }, {
         preserveScroll: true,
         onFinish: () => { deducting.value = false; },
+    });
+};
+
+// Submit server fee deduction (admin only)
+const deductingServerFee = ref(false);
+const submitServerFeeDeduction = () => {
+    if (serverFeeAlreadyDoneForCurrentMonth.value) return;
+    deductingServerFee.value = true;
+    router.post(route('capital-cash-flow.deductions.server-fee'), { year: selectedYear.value }, {
+        preserveScroll: true,
+        onFinish: () => { deductingServerFee.value = false; },
     });
 };
 
@@ -446,16 +466,26 @@ const contributionColumns = [
                     <div class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
                         <div class="border-b border-slate-200 bg-slate-50/80 px-6 py-4 flex flex-wrap items-center justify-between gap-3">
                             <h3 class="text-base font-semibold text-slate-800">Deductions</h3>
-                            <Button
-                                v-if="isAdmin"
-                                type="primary"
-                                :loading="deducting"
-                                :disabled="deductionAlreadyDoneForCurrentMonth"
-                                :title="deductionAlreadyDoneForCurrentMonth ? 'Deduction for this month already recorded. Available again next month.' : ''"
-                                @click="submitDeduction"
-                            >
-                                {{ deductButtonLabel }}
-                            </Button>
+                            <div v-if="isAdmin" class="flex flex-wrap gap-2">
+                                <Button
+                                    type="primary"
+                                    :loading="deducting"
+                                    :disabled="deductionAlreadyDoneForCurrentMonth"
+                                    :title="deductionAlreadyDoneForCurrentMonth ? 'Deduction for this month already recorded. Available again next month.' : ''"
+                                    @click="submitDeduction"
+                                >
+                                    {{ deductButtonLabel }}
+                                </Button>
+                                <Button
+                                    type="default"
+                                    :loading="deductingServerFee"
+                                    :disabled="serverFeeAlreadyDoneForCurrentMonth || !monthlyServerAmount"
+                                    :title="serverFeeAlreadyDoneForCurrentMonth ? 'Server fee already deducted this month.' : (!monthlyServerAmount ? 'Monthly server amount is not set in system settings.' : '')"
+                                    @click="submitServerFeeDeduction"
+                                >
+                                    Deduct Monthly Servers Fee
+                                </Button>
+                            </div>
                         </div>
                         <div class="p-6">
                             <ul
