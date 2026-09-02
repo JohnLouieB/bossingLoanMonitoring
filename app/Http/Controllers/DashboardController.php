@@ -69,7 +69,7 @@ class DashboardController extends Controller
 
         // Top loaners (members with most loans), limit 10
         $topLoaners = Member::withCount('loans')
-            ->having('loans_count', '>', 0)
+            ->has('loans')
             ->orderByDesc('loans_count')
             ->limit(10)
             ->get()
