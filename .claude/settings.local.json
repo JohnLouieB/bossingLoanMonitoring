@@ -29,7 +29,9 @@
       "PowerShell(neon config *)",
       "PowerShell(neon deploy *)",
       "PowerShell(neon whoami *)",
-      "PowerShell(neon env *)"
+      "PowerShell(neon env *)",
+      "Bash(git check-ignore *)",
+      "PowerShell(npm run *)"
     ]
   }
 }
