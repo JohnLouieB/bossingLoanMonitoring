@@ -21,7 +21,15 @@
       "Bash(powershell *)",
       "Bash(git add *)",
       "Bash(git commit *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "PowerShell(neon login *)",
+      "PowerShell(neon skills *)",
+      "PowerShell(neon mcp *)",
+      "PowerShell(neon link *)",
+      "PowerShell(neon config *)",
+      "PowerShell(neon deploy *)",
+      "PowerShell(neon whoami *)",
+      "PowerShell(neon env *)"
     ]
   }
 }
