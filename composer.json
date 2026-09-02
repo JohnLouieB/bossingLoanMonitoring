@@ -86,7 +86,9 @@
                 "laravel/mcp",
                 "laravel/pail",
                 "laravel/roster",
-                "laravel/sail"
+                "laravel/sail",
+                "nunomaduro/collision",
+                "pestphp/pest-plugin-laravel"
             ]
         }
     },
