@@ -81,7 +81,12 @@
     "extra": {
         "laravel": {
             "dont-discover": [
-                "laravel/boost"
+                "laravel/boost",
+                "laravel/breeze",
+                "laravel/mcp",
+                "laravel/pail",
+                "laravel/roster",
+                "laravel/sail"
             ]
         }
     },
