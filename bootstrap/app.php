@@ -20,6 +20,12 @@ $app = Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'admin' => \App\Http\Middleware\EnsureUserIsAdmin::class,
         ]);
+
+        // Vercel terminates TLS at its edge and proxies plain HTTP to the
+        // function, so trust its X-Forwarded-* headers to get https:// URLs.
+        if (getenv('VERCEL')) {
+            $middleware->trustProxies(at: '*');
+        }
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //
