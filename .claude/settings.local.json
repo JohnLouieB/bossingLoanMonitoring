@@ -31,7 +31,12 @@
       "PowerShell(neon whoami *)",
       "PowerShell(neon env *)",
       "Bash(git check-ignore *)",
-      "PowerShell(npm run *)"
+      "PowerShell(npm run *)",
+      "PowerShell(npm view *)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(gh api *)",
+      "WebFetch(domain:unpkg.com)"
     ]
   }
 }
