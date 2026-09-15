@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class RefreshDatabaseData extends Command
 {
@@ -73,23 +74,7 @@ class RefreshDatabaseData extends Command
             }
             $this->newLine();
 
-            // Disable foreign key checks
-            DB::statement('SET FOREIGN_KEY_CHECKS=0;');
-
-            // Truncate each table
-            $truncatedCount = 0;
-            foreach ($tablesToTruncate as $table) {
-                try {
-                    DB::table($table)->truncate();
-                    $truncatedCount++;
-                    $this->info("✓ Truncated: {$table}");
-                } catch (\Exception $e) {
-                    $this->error("✗ Failed to truncate {$table}: " . $e->getMessage());
-                }
-            }
-
-            // Re-enable foreign key checks
-            DB::statement('SET FOREIGN_KEY_CHECKS=1;');
+            $truncatedCount = $this->truncateTables($tablesToTruncate);
 
             $this->newLine();
             $this->info("Successfully truncated {$truncatedCount} table(s).");
@@ -105,13 +90,57 @@ class RefreshDatabaseData extends Command
             return Command::SUCCESS;
 
         } catch (\Exception $e) {
-            // Re-enable foreign key checks in case of error
-            DB::statement('SET FOREIGN_KEY_CHECKS=1;');
-            
             $this->error('An error occurred: ' . $e->getMessage());
             $this->error($e->getTraceAsString());
             return Command::FAILURE;
         }
+    }
+
+    /**
+     * Truncate the given tables, working around each driver's foreign key rules.
+     *
+     * @param  array  $tables
+     * @return int  Number of tables truncated
+     */
+    protected function truncateTables(array $tables): int
+    {
+        // Postgres refuses to truncate a table that another table references
+        // unless every referencing table is truncated in the same statement,
+        // so send them all at once rather than looping one by one.
+        if (DB::getDriverName() === 'pgsql') {
+            $quoted = collect($tables)
+                ->map(fn ($table) => '"' . str_replace('"', '""', $table) . '"')
+                ->implode(', ');
+
+            DB::statement("TRUNCATE TABLE {$quoted} RESTART IDENTITY");
+
+            foreach ($tables as $table) {
+                $this->info("✓ Truncated: {$table}");
+            }
+
+            return count($tables);
+        }
+
+        $truncatedCount = 0;
+
+        // MySQL/SQLite: drop the constraint checks so order doesn't matter.
+        Schema::disableForeignKeyConstraints();
+
+        try {
+            foreach ($tables as $table) {
+                try {
+                    DB::table($table)->truncate();
+                    $truncatedCount++;
+                    $this->info("✓ Truncated: {$table}");
+                } catch (\Exception $e) {
+                    $this->error("✗ Failed to truncate {$table}: " . $e->getMessage());
+                }
+            }
+        } finally {
+            Schema::enableForeignKeyConstraints();
+        }
+
+        return $truncatedCount;
     }
 
     /**
@@ -121,18 +150,8 @@ class RefreshDatabaseData extends Command
      */
     protected function getAllTables(): array
     {
-        $databaseName = DB::getDatabaseName();
-        
-        // For MySQL/MariaDB
-        $tables = DB::select("SHOW TABLES");
-        
-        $tableNames = [];
-        $key = "Tables_in_{$databaseName}";
-        
-        foreach ($tables as $table) {
-            $tableNames[] = $table->$key;
-        }
-
-        return $tableNames;
+        // Driver-agnostic listing; schemaQualified: false keeps bare table
+        // names so they match the preserved list on Postgres too.
+        return Schema::getTableListing(schemaQualified: false);
     }
 }
